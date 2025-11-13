@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 lazy_static = "1.5.0"
-libsql = "0.9.9"
+libsql = "0.9.24"
 once_cell = "1.21.3"
 rustler = "0.36.1"
 tokio = "1.45.1"
