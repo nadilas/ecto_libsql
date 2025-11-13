@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use libsql::{Builder, Rows, Transaction, Value};
+use libsql::{Builder, Rows, Statement, Transaction, TransactionBehavior, Value};
 use once_cell::sync::Lazy;
 use rustler::atoms;
 use rustler::types::atom::nil;
@@ -23,6 +23,7 @@ pub struct LibSQLConn {
 
 lazy_static! {
     static ref TXN_REGISTRY: Mutex<HashMap<String, Transaction>> = Mutex::new(HashMap::new());
+    static ref STMT_REGISTRY: Mutex<HashMap<String, Statement>> = Mutex::new(HashMap::new());
     pub static ref CONNECTION_REGISTRY: Mutex<HashMap<String, Arc<Mutex<LibSQLConn>>>> =
         Mutex::new(HashMap::new());
 }
@@ -34,8 +35,13 @@ atoms! {
     ok,
     conn_id,
     trx_id,
+    stmt_id,
     disable_sync,
-    enable_sync
+    enable_sync,
+    deferred,
+    immediate,
+    exclusive,
+    read_only
 }
 
 enum Mode {
@@ -55,6 +61,20 @@ fn decode_mode(atom: Atom) -> Option<Mode> {
     }
 }
 
+fn decode_transaction_behavior(atom: Atom) -> Option<TransactionBehavior> {
+    if atom == deferred() {
+        Some(TransactionBehavior::Deferred)
+    } else if atom == immediate() {
+        Some(TransactionBehavior::Immediate)
+    } else if atom == exclusive() {
+        Some(TransactionBehavior::Exclusive)
+    } else if atom == read_only() {
+        Some(TransactionBehavior::ReadOnly)
+    } else {
+        None
+    }
+}
+
 #[rustler::nif(schedule = "DirtyIo")]
 pub fn begin_transaction(conn_id: &str) -> NifResult<String> {
     let conn_map = CONNECTION_REGISTRY.lock().unwrap();
@@ -67,6 +87,38 @@ pub fn begin_transaction(conn_id: &str) -> NifResult<String> {
                     .lock()
                     .unwrap()
                     .transaction()
+                    .await
+            })
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Begin failed: {}", e))))?;
+
+        let trx_id = Uuid::new_v4().to_string();
+        TXN_REGISTRY.lock().unwrap().insert(trx_id.clone(), trx);
+
+        Ok(trx_id)
+    } else {
+        println!(
+            "Connection ID not found begin transaction new : {}",
+            conn_id
+        );
+        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
+    }
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+pub fn begin_transaction_with_behavior(conn_id: &str, behavior: Atom) -> NifResult<String> {
+    let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+    if let Some(conn) = conn_map.get(conn_id) {
+        let trx_behavior = decode_transaction_behavior(behavior)
+            .unwrap_or(TransactionBehavior::Deferred);
+
+        let trx = TOKIO_RUNTIME
+            .block_on(async {
+                conn.lock()
+                    .unwrap()
+                    .client
+                    .lock()
+                    .unwrap()
+                    .transaction_with_behavior(trx_behavior)
                     .await
             })
             .map_err(|e| rustler::Error::Term(Box::new(format!("Begin failed: {}", e))))?;
@@ -211,7 +263,13 @@ pub fn close(id: &str, opt: Atom) -> NifResult<rustler::Atom> {
         let removed = TXN_REGISTRY.lock().unwrap().remove(id);
         match removed {
             Some(_) => Ok(rustler::types::atom::ok()),
-            None => Err(rustler::Error::Term(Box::new("Connection not found"))),
+            None => Err(rustler::Error::Term(Box::new("Transaction not found"))),
+        }
+    } else if opt == stmt_id() {
+        let removed = STMT_REGISTRY.lock().unwrap().remove(id);
+        match removed {
+            Some(_) => Ok(rustler::types::atom::ok()),
+            None => Err(rustler::Error::Term(Box::new("Statement not found"))),
         }
     } else {
         Err(rustler::Error::Term(Box::new("opt is incorrect")))
@@ -313,11 +371,7 @@ fn query_args<'a>(
 ) -> Result<NifResult<Term<'a>>, rustler::Error> {
     let conn_map = CONNECTION_REGISTRY.lock().unwrap();
 
-    let mut is_sync = false;
-    match detect_query_type(query) {
-        QueryType::Select => is_sync = false,
-        _ => is_sync = true,
-    }
+    let is_sync = !matches!(detect_query_type(query), QueryType::Select);
 
     if let Some(client) = conn_map.get(conn_id) {
         let client = client.clone();
@@ -345,13 +399,8 @@ fn query_args<'a>(
 
                     if let Some(modex) = decode_mode(mode) {
                         // if remote replica and a write query then sync
-                        match modex {
-                            Mode::RemoteReplica => {
-                                if is_sync && syncx == enable_sync() {
-                                    let _ = client.lock().unwrap().db.sync().await;
-                                }
-                            }
-                            _ => is_sync = false,
+                        if matches!(modex, Mode::RemoteReplica) && is_sync && syncx == enable_sync() {
+                            let _ = client.lock().unwrap().db.sync().await;
                         }
                     }
 
@@ -527,4 +576,386 @@ pub fn detect_query_type(query: &str) -> QueryType {
         _ => QueryType::Other,
     }
 }
+// Batch execution support - executes statements sequentially without transaction
+#[rustler::nif(schedule = "DirtyIo")]
+fn execute_batch<'a>(
+    env: Env<'a>,
+    conn_id: &str,
+    mode: Atom,
+    syncx: Atom,
+    statements: Vec<Term<'a>>,
+) -> Result<NifResult<Term<'a>>, rustler::Error> {
+    let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+
+    if let Some(client) = conn_map.get(conn_id) {
+        let client = client.clone();
+
+        // Decode each statement with its arguments
+        let mut batch_stmts: Vec<(String, Vec<Value>)> = Vec::new();
+        for stmt_term in statements {
+            let (query, args): (String, Vec<Term>) = stmt_term.decode()
+                .map_err(|e| rustler::Error::Term(Box::new(format!("Failed to decode statement: {:?}", e))))?;
+
+            let decoded_args: Vec<Value> = args
+                .into_iter()
+                .map(|t| decode_term_to_value(t))
+                .collect::<Result<_, _>>()
+                .map_err(|e| rustler::Error::Term(Box::new(e)))?;
+
+            batch_stmts.push((query, decoded_args));
+        }
+
+        let result = TOKIO_RUNTIME.block_on(async {
+            let mut all_results: Vec<Term<'a>> = Vec::new();
+
+            // Execute each statement sequentially
+            for (sql, args) in batch_stmts.iter() {
+                match client
+                    .lock()
+                    .unwrap()
+                    .client
+                    .lock()
+                    .unwrap()
+                    .query(sql, args.clone())
+                    .await
+                {
+                    Ok(rows) => {
+                        let collected = collect_rows(env, rows)
+                            .await
+                            .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
+                        all_results.push(collected);
+                    }
+                    Err(e) => {
+                        return Err(rustler::Error::Term(Box::new(format!("Batch statement error: {}", e))));
+                    }
+                }
+            }
+
+            // Check if we need to sync
+            let needs_sync = batch_stmts.iter().any(|(sql, _)| {
+                matches!(detect_query_type(sql), QueryType::Insert | QueryType::Update | QueryType::Delete | QueryType::Create | QueryType::Drop | QueryType::Alter)
+            });
+
+            if needs_sync {
+                if let Some(modex) = decode_mode(mode) {
+                    if matches!(modex, Mode::RemoteReplica) && syncx == enable_sync() {
+                        let _ = client.lock().unwrap().db.sync().await;
+                    }
+                }
+            }
+
+            Ok(Ok(all_results.encode(env)))
+        });
+
+        return result;
+    } else {
+        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
+    }
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn execute_transactional_batch<'a>(
+    env: Env<'a>,
+    conn_id: &str,
+    mode: Atom,
+    syncx: Atom,
+    statements: Vec<Term<'a>>,
+) -> Result<NifResult<Term<'a>>, rustler::Error> {
+    let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+
+    if let Some(client) = conn_map.get(conn_id) {
+        let client = client.clone();
+
+        // Decode each statement with its arguments
+        let mut batch_stmts: Vec<(String, Vec<Value>)> = Vec::new();
+        for stmt_term in statements {
+            let (query, args): (String, Vec<Term>) = stmt_term.decode()
+                .map_err(|e| rustler::Error::Term(Box::new(format!("Failed to decode statement: {:?}", e))))?;
+
+            let decoded_args: Vec<Value> = args
+                .into_iter()
+                .map(|t| decode_term_to_value(t))
+                .collect::<Result<_, _>>()
+                .map_err(|e| rustler::Error::Term(Box::new(e)))?;
+
+            batch_stmts.push((query, decoded_args));
+        }
+
+        let result = TOKIO_RUNTIME.block_on(async {
+            // Start a transaction
+            let trx = client
+                .lock()
+                .unwrap()
+                .client
+                .lock()
+                .unwrap()
+                .transaction()
+                .await
+                .map_err(|e| rustler::Error::Term(Box::new(format!("Begin transaction failed: {}", e))))?;
+
+            let mut all_results: Vec<Term<'a>> = Vec::new();
+
+            // Execute each statement in the transaction
+            for (sql, args) in batch_stmts.iter() {
+                match trx.query(sql, args.clone()).await {
+                    Ok(rows) => {
+                        let collected = collect_rows(env, rows)
+                            .await
+                            .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
+                        all_results.push(collected);
+                    }
+                    Err(e) => {
+                        // Rollback on error
+                        let _ = trx.rollback().await;
+                        return Err(rustler::Error::Term(Box::new(format!("Batch statement error: {}", e))));
+                    }
+                }
+            }
+
+            // Commit the transaction
+            trx.commit()
+                .await
+                .map_err(|e| rustler::Error::Term(Box::new(format!("Commit failed: {}", e))))?;
+
+            // Sync if needed
+            let needs_sync = batch_stmts.iter().any(|(sql, _)| {
+                matches!(detect_query_type(sql), QueryType::Insert | QueryType::Update | QueryType::Delete | QueryType::Create | QueryType::Drop | QueryType::Alter)
+            });
+
+            if needs_sync {
+                if let Some(modex) = decode_mode(mode) {
+                    if matches!(modex, Mode::RemoteReplica) && syncx == enable_sync() {
+                        let _ = client.lock().unwrap().db.sync().await;
+                    }
+                }
+            }
+
+            Ok(Ok(all_results.encode(env)))
+        });
+
+        return result;
+    } else {
+        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
+    }
+}
+
+// Prepared statement support
+#[rustler::nif(schedule = "DirtyIo")]
+fn prepare_statement(conn_id: &str, sql: &str) -> NifResult<String> {
+    let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+
+    if let Some(client) = conn_map.get(conn_id) {
+        let client = client.clone();
+
+        let stmt = TOKIO_RUNTIME
+            .block_on(async {
+                client
+                    .lock()
+                    .unwrap()
+                    .client
+                    .lock()
+                    .unwrap()
+                    .prepare(sql)
+                    .await
+            })
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Prepare failed: {}", e))))?;
+
+        let stmt_id = Uuid::new_v4().to_string();
+        STMT_REGISTRY.lock().unwrap().insert(stmt_id.clone(), stmt);
+
+        Ok(stmt_id)
+    } else {
+        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
+    }
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn query_prepared<'a>(
+    env: Env<'a>,
+    conn_id: &str,
+    stmt_id: &str,
+    _mode: Atom,
+    _syncx: Atom,
+    args: Vec<Term<'a>>,
+) -> Result<NifResult<Term<'a>>, rustler::Error> {
+    let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+    let mut stmt_registry = STMT_REGISTRY.lock().unwrap();
+
+    if conn_map.get(conn_id).is_none() {
+        return Err(rustler::Error::Term(Box::new("Invalid connection ID")));
+    }
+    let stmt = stmt_registry
+        .get_mut(stmt_id)
+        .ok_or_else(|| rustler::Error::Term(Box::new("Statement not found")))?;
+
+    let decoded_args: Vec<Value> = args
+        .into_iter()
+        .map(|t| decode_term_to_value(t))
+        .collect::<Result<_, _>>()
+        .map_err(|e| rustler::Error::Term(Box::new(e)))?;
+
+    let result = TOKIO_RUNTIME.block_on(async {
+        let res = stmt.query(decoded_args).await;
+
+        match res {
+            Ok(rows) => {
+                let collected = collect_rows(env, rows)
+                    .await
+                    .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
+
+                // Note: Prepared statements don't auto-sync by default
+                // Users should explicitly sync if needed
+
+                Ok(Ok(collected))
+            }
+            Err(e) => Err(rustler::Error::Term(Box::new(e.to_string()))),
+        }
+    });
+
+    result
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn execute_prepared<'a>(
+    conn_id: &str,
+    stmt_id: &str,
+    mode: Atom,
+    syncx: Atom,
+    args: Vec<Term<'a>>,
+    sql_hint: &str,  // For detecting if we need sync
+) -> NifResult<u64> {
+    let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+    let mut stmt_registry = STMT_REGISTRY.lock().unwrap();
+
+    if conn_map.get(conn_id).is_none() {
+        return Err(rustler::Error::Term(Box::new("Invalid connection ID")));
+    }
+
+    let client = conn_map.get(conn_id).unwrap().clone();
+    let stmt = stmt_registry
+        .get_mut(stmt_id)
+        .ok_or_else(|| rustler::Error::Term(Box::new("Statement not found")))?;
+
+    let decoded_args: Vec<Value> = args
+        .into_iter()
+        .map(|t| decode_term_to_value(t))
+        .collect::<Result<_, _>>()
+        .map_err(|e| rustler::Error::Term(Box::new(e)))?;
+
+    let is_sync = !matches!(detect_query_type(sql_hint), QueryType::Select);
+
+    let result = TOKIO_RUNTIME.block_on(async {
+        let affected = stmt
+            .execute(decoded_args)
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Execute failed: {}", e))))?;
+
+        // Auto-sync if needed
+        if is_sync {
+            if let Some(modex) = decode_mode(mode) {
+                if matches!(modex, Mode::RemoteReplica) && syncx == enable_sync() {
+                    let _ = client.lock().unwrap().db.sync().await;
+                }
+            }
+        }
+
+        Ok(affected as u64)
+    });
+
+    result
+}
+
+// Metadata methods
+#[rustler::nif(schedule = "DirtyIo")]
+fn last_insert_rowid(conn_id: &str) -> NifResult<i64> {
+    let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+
+    if let Some(client) = conn_map.get(conn_id) {
+        let client = client.clone();
+
+        let result = TOKIO_RUNTIME.block_on(async {
+            client
+                .lock()
+                .unwrap()
+                .client
+                .lock()
+                .unwrap()
+                .last_insert_rowid()
+        });
+
+        Ok(result)
+    } else {
+        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
+    }
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn changes(conn_id: &str) -> NifResult<u64> {
+    let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+
+    if let Some(client) = conn_map.get(conn_id) {
+        let client = client.clone();
+
+        let result = TOKIO_RUNTIME.block_on(async {
+            client
+                .lock()
+                .unwrap()
+                .client
+                .lock()
+                .unwrap()
+                .changes()
+        });
+
+        Ok(result)
+    } else {
+        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
+    }
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn total_changes(conn_id: &str) -> NifResult<u64> {
+    let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+
+    if let Some(client) = conn_map.get(conn_id) {
+        let client = client.clone();
+
+        let result = TOKIO_RUNTIME.block_on(async {
+            client
+                .lock()
+                .unwrap()
+                .client
+                .lock()
+                .unwrap()
+                .total_changes()
+        });
+
+        Ok(result)
+    } else {
+        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
+    }
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn is_autocommit(conn_id: &str) -> NifResult<bool> {
+    let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+
+    if let Some(client) = conn_map.get(conn_id) {
+        let client = client.clone();
+
+        let result = TOKIO_RUNTIME.block_on(async {
+            client
+                .lock()
+                .unwrap()
+                .client
+                .lock()
+                .unwrap()
+                .is_autocommit()
+        });
+
+        Ok(result)
+    } else {
+        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
+    }
+}
+
 rustler::init!("Elixir.LibSqlEx.Native");
