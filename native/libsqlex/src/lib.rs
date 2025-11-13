@@ -1,5 +1,6 @@
+use bytes::Bytes;
 use lazy_static::lazy_static;
-use libsql::{Builder, Rows, Statement, Transaction, TransactionBehavior, Value};
+use libsql::{Builder, Cipher, EncryptionConfig, Rows, Statement, Transaction, TransactionBehavior, Value};
 use once_cell::sync::Lazy;
 use rustler::atoms;
 use rustler::types::atom::nil;
@@ -21,9 +22,17 @@ pub struct LibSQLConn {
     pub client: Arc<Mutex<libsql::Connection>>,
 }
 
+#[derive(Debug)]
+pub struct CursorData {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<Value>>,
+    pub position: usize,
+}
+
 lazy_static! {
     static ref TXN_REGISTRY: Mutex<HashMap<String, Transaction>> = Mutex::new(HashMap::new());
     static ref STMT_REGISTRY: Mutex<HashMap<String, Statement>> = Mutex::new(HashMap::new());
+    static ref CURSOR_REGISTRY: Mutex<HashMap<String, CursorData>> = Mutex::new(HashMap::new());
     pub static ref CONNECTION_REGISTRY: Mutex<HashMap<String, Arc<Mutex<LibSQLConn>>>> =
         Mutex::new(HashMap::new());
 }
@@ -36,6 +45,7 @@ atoms! {
     conn_id,
     trx_id,
     stmt_id,
+    cursor_id,
     disable_sync,
     enable_sync,
     deferred,
@@ -271,6 +281,12 @@ pub fn close(id: &str, opt: Atom) -> NifResult<rustler::Atom> {
             Some(_) => Ok(rustler::types::atom::ok()),
             None => Err(rustler::Error::Term(Box::new("Statement not found"))),
         }
+    } else if opt == cursor_id() {
+        let removed = CURSOR_REGISTRY.lock().unwrap().remove(id);
+        match removed {
+            Some(_) => Ok(rustler::types::atom::ok()),
+            None => Err(rustler::Error::Term(Box::new("Cursor not found"))),
+        }
     } else {
         Err(rustler::Error::Term(Box::new("opt is incorrect")))
     }
@@ -296,6 +312,7 @@ fn connect(opts: Term, mode: Term) -> NifResult<String> {
         .get("auth_token")
         .and_then(|t| t.decode::<String>().ok());
     let dbname = map.get("database").and_then(|t| t.decode::<String>().ok());
+    let encryption_key = map.get("encryption_key").and_then(|t| t.decode::<String>().ok());
 
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| rustler::Error::Term(Box::new(format!("Tokio runtime err {}", e))))?;
@@ -308,9 +325,17 @@ fn connect(opts: Term, mode: Term) -> NifResult<String> {
                     let token = token.ok_or_else(|| rustler::Error::BadArg)?;
                     let dbname = dbname.ok_or_else(|| rustler::Error::BadArg)?;
 
-                    Builder::new_remote_replica(dbname, url, token)
-                        .build()
-                        .await
+                    let mut builder = Builder::new_remote_replica(dbname, url, token);
+
+                    if let Some(key) = encryption_key {
+                        let config = EncryptionConfig {
+                            cipher: Cipher::Aes256Cbc,
+                            encryption_key: Bytes::from(key),
+                        };
+                        builder = builder.encryption_config(config);
+                    }
+
+                    builder.build().await
                 } else if mode_str == "remote" {
                     let url = url.ok_or_else(|| rustler::Error::BadArg)?;
                     let token = token.ok_or_else(|| rustler::Error::BadArg)?;
@@ -319,7 +344,17 @@ fn connect(opts: Term, mode: Term) -> NifResult<String> {
                 } else if mode_str == "local" {
                     let dbname = dbname.ok_or_else(|| rustler::Error::BadArg)?;
 
-                    Builder::new_local(dbname).build().await
+                    let mut builder = Builder::new_local(dbname);
+
+                    if let Some(key) = encryption_key {
+                        let config = EncryptionConfig {
+                            cipher: Cipher::Aes256Cbc,
+                            encryption_key: Bytes::from(key),
+                        };
+                        builder = builder.encryption_config(config);
+                    }
+
+                    builder.build().await
                 } else {
                     // else value will return string error
                     return Err(rustler::Error::Term(Box::new(format!("Unknown mode",))));
@@ -956,6 +991,126 @@ fn is_autocommit(conn_id: &str) -> NifResult<bool> {
     } else {
         Err(rustler::Error::Term(Box::new("Invalid connection ID")))
     }
+}
+
+// Cursor support for large result sets
+#[rustler::nif(schedule = "DirtyIo")]
+fn declare_cursor(conn_id: &str, sql: &str, args: Vec<Term>) -> NifResult<String> {
+    let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+
+    if let Some(client) = conn_map.get(conn_id) {
+        let client = client.clone();
+
+        let decoded_args: Vec<Value> = args
+            .into_iter()
+            .map(|t| decode_term_to_value(t))
+            .collect::<Result<_, _>>()
+            .map_err(|e| rustler::Error::Term(Box::new(e)))?;
+
+        let (columns, rows) = TOKIO_RUNTIME.block_on(async {
+            let mut result_rows = client
+                .lock()
+                .unwrap()
+                .client
+                .lock()
+                .unwrap()
+                .query(sql, decoded_args)
+                .await
+                .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
+
+            let mut columns: Vec<String> = Vec::new();
+            let mut rows: Vec<Vec<Value>> = Vec::new();
+
+            while let Some(row) = result_rows
+                .next()
+                .await
+                .map_err(|e| rustler::Error::Term(Box::new(e.to_string())))?
+            {
+                // Get column names on first row
+                if columns.is_empty() {
+                    for i in 0..row.column_count() {
+                        if let Some(name) = row.column_name(i) {
+                            columns.push(name.to_string());
+                        } else {
+                            columns.push(format!("col{}", i));
+                        }
+                    }
+                }
+
+                // Collect row values
+                let mut row_values = Vec::new();
+                for i in 0..columns.len() {
+                    let value = row
+                        .get(i as i32)
+                        .unwrap_or(Value::Null);
+                    row_values.push(value);
+                }
+                rows.push(row_values);
+            }
+
+            Ok::<_, rustler::Error>((columns, rows))
+        })?;
+
+        let cursor_id = Uuid::new_v4().to_string();
+        let cursor_data = CursorData {
+            columns,
+            rows,
+            position: 0,
+        };
+
+        CURSOR_REGISTRY.lock().unwrap().insert(cursor_id.clone(), cursor_data);
+
+        Ok(cursor_id)
+    } else {
+        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
+    }
+}
+
+#[rustler::nif]
+fn fetch_cursor<'a>(env: Env<'a>, cursor_id: &str, max_rows: usize) -> NifResult<Term<'a>> {
+    let mut cursor_registry = CURSOR_REGISTRY.lock().unwrap();
+
+    let cursor = cursor_registry
+        .get_mut(cursor_id)
+        .ok_or_else(|| rustler::Error::Term(Box::new("Cursor not found")))?;
+
+    let remaining = cursor.rows.len().saturating_sub(cursor.position);
+    let fetch_count = remaining.min(max_rows);
+
+    if fetch_count == 0 {
+        // No more rows
+        let elixir_columns: Vec<Term> = cursor.columns.iter().map(|c| c.encode(env)).collect();
+        let empty_rows: Vec<Term> = Vec::new();
+        let result = (elixir_columns, empty_rows, 0usize);
+        return Ok(result.encode(env));
+    }
+
+    let end_pos = cursor.position + fetch_count;
+    let fetched_rows: Vec<Vec<Value>> = cursor.rows[cursor.position..end_pos].to_vec();
+    cursor.position = end_pos;
+
+    // Convert to Elixir terms
+    let elixir_columns: Vec<Term> = cursor.columns.iter().map(|c| c.encode(env)).collect();
+
+    let elixir_rows: Vec<Term> = fetched_rows
+        .iter()
+        .map(|row| {
+            let row_terms: Vec<Term> = row
+                .iter()
+                .map(|val| match val {
+                    Value::Text(s) => s.encode(env),
+                    Value::Integer(i) => i.encode(env),
+                    Value::Real(f) => f.encode(env),
+                    Value::Blob(b) => b.encode(env),
+                    Value::Null => nil().encode(env),
+                })
+                .collect();
+            row_terms.encode(env)
+        })
+        .collect();
+
+    let result = (elixir_columns, elixir_rows, fetch_count);
+    Ok(result.encode(env))
 }
 
 rustler::init!("Elixir.LibSqlEx.Native");

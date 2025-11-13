@@ -65,7 +65,6 @@ defmodule LibSqlExTest do
   end
 
   # passed
-  @tag :skip
   test "vector", state do
     query = "CREATE TABLE IF NOT EXISTS movies ( title TEXT, year INT, embedding F32_BLOB(3)
 );"

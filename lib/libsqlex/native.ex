@@ -26,6 +26,8 @@ defmodule LibSqlEx.Native do
   def changes(_conn), do: :erlang.nif_error(:nif_not_loaded)
   def total_changes(_conn), do: :erlang.nif_error(:nif_not_loaded)
   def is_autocommit(_conn), do: :erlang.nif_error(:nif_not_loaded)
+  def declare_cursor(_conn, _sql, _args), do: :erlang.nif_error(:nif_not_loaded)
+  def fetch_cursor(_cursor_id, _max_rows), do: :erlang.nif_error(:nif_not_loaded)
 
   # helper
 
@@ -271,6 +273,57 @@ defmodule LibSqlEx.Native do
   """
   def get_is_autocommit(%LibSqlEx.State{conn_id: conn_id} = _state) do
     is_autocommit(conn_id)
+  end
+
+  @doc """
+  Create a vector from a list of numbers for use in vector columns.
+
+  ## Parameters
+    - values: List of numbers (integers or floats)
+
+  ## Example
+      # Create a 3-dimensional vector
+      vec = LibSqlEx.Native.vector([1.0, 2.0, 3.0])
+      # Use in query: "INSERT INTO items (embedding) VALUES (?)"
+  """
+  def vector(values) when is_list(values) do
+    "[#{Enum.join(values, ",")}]"
+  end
+
+  @doc """
+  Helper to create a vector column definition for CREATE TABLE.
+
+  ## Parameters
+    - dimensions: Number of dimensions
+    - type: :f32 (float32) or :f64 (float64), defaults to :f32
+
+  ## Example
+      column_def = LibSqlEx.Native.vector_type(3)  # "F32_BLOB(3)"
+      # Use in: "CREATE TABLE items (embedding #{column_def})"
+  """
+  def vector_type(dimensions, type \\ :f32) when is_integer(dimensions) and dimensions > 0 do
+    case type do
+      :f32 -> "F32_BLOB(#{dimensions})"
+      :f64 -> "F64_BLOB(#{dimensions})"
+      _ -> raise ArgumentError, "type must be :f32 or :f64"
+    end
+  end
+
+  @doc """
+  Generate SQL for cosine distance vector similarity search.
+
+  ## Parameters
+    - column: Name of the vector column
+    - vector: The query vector (list of numbers or vector string)
+
+  ## Example
+      distance_sql = LibSqlEx.Native.vector_distance_cos("embedding", [1.0, 2.0, 3.0])
+      # Returns: "vector_distance_cos(embedding, '[1.0,2.0,3.0]')"
+      # Use in: "SELECT * FROM items ORDER BY #{distance_sql} LIMIT 10"
+  """
+  def vector_distance_cos(column, vector) when is_binary(column) do
+    vec_str = if is_list(vector), do: vector(vector), else: vector
+    "vector_distance_cos(#{column}, '#{vec_str}')"
   end
 
   @doc """
