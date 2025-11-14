@@ -31,7 +31,7 @@ defmodule LibSqlEx.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:rustler, "~> 0.27"},
+      {:rustler, "~> 0.36"},
       {:db_connection, "~> 2.1"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
       # {:dep_from_hexpm, "~> 0.3.0"},
