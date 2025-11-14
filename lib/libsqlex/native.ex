@@ -315,7 +315,7 @@ defmodule LibSqlEx.Native do
 
   ## Example
       column_def = LibSqlEx.Native.vector_type(3)  # "F32_BLOB(3)"
-      # Use in: "CREATE TABLE items (embedding #{column_def})"
+      # Use in: "CREATE TABLE items (embedding \#{column_def})"
   """
   def vector_type(dimensions, type \\ :f32) when is_integer(dimensions) and dimensions > 0 do
     case type do
@@ -335,7 +335,7 @@ defmodule LibSqlEx.Native do
   ## Example
       distance_sql = LibSqlEx.Native.vector_distance_cos("embedding", [1.0, 2.0, 3.0])
       # Returns: "vector_distance_cos(embedding, '[1.0,2.0,3.0]')"
-      # Use in: "SELECT * FROM items ORDER BY #{distance_sql} LIMIT 10"
+      # Use in: "SELECT * FROM items ORDER BY \#{distance_sql} LIMIT 10"
   """
   def vector_distance_cos(column, vector) when is_binary(column) do
     vec_str = if is_list(vector), do: vector(vector), else: vector
