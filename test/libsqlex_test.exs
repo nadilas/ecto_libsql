@@ -158,6 +158,13 @@ defmodule LibSqlExTest do
   test "delete user and check it's gone", state do
     {:ok, state} = LibSqlEx.connect(state[:opts])
 
+    # Create table first
+    create_table = %LibSqlEx.Query{
+      statement:
+        "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT)"
+    }
+    {:ok, _, _, state} = LibSqlEx.handle_execute(create_table, [], [], state)
+
     insert_query = %LibSqlEx.Query{
       statement: "INSERT INTO users (name, email) VALUES (?1, ?2)"
     }
@@ -184,6 +191,13 @@ defmodule LibSqlExTest do
 
   test "transaction rollback", state do
     {:ok, state} = LibSqlEx.connect(state[:opts])
+
+    # Create table first
+    create_table = %LibSqlEx.Query{
+      statement:
+        "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT)"
+    }
+    {:ok, _, _, state} = LibSqlEx.handle_execute(create_table, [], [], state)
 
     {:ok, _, new_state} = LibSqlEx.handle_begin([], state)
 
