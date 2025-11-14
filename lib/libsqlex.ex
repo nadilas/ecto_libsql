@@ -158,7 +158,7 @@ defmodule LibSqlEx do
   end
 
   @impl true
-  def handle_fetch(%LibSqlEx.Query{} = query, cursor, opts, %LibSqlEx.State{} = state) do
+  def handle_fetch(%LibSqlEx.Query{} = _query, cursor, opts, %LibSqlEx.State{} = state) do
     max_rows = Keyword.get(opts, :max_rows, 500)
 
     case LibSqlEx.Native.fetch_cursor(cursor.ref, max_rows) do
