@@ -51,7 +51,7 @@ defmodule LibSqlExTest do
     query = %LibSqlEx.Query{statement: "INSERT INTO users (name, email) values (?1, ?2)"}
     param = ["foo", "bar@mail.com"]
 
-    exec =
+    _exec =
       LibSqlEx.handle_execute(
         query,
         param,
@@ -213,7 +213,7 @@ defmodule LibSqlExTest do
 
   # passed
   @tag :skip
-  test "local no sync", state do
+  test "local no sync", _state do
     local = [
       database: "bar.db"
     ]
@@ -241,7 +241,7 @@ defmodule LibSqlExTest do
              select_execute
   end
 
-  test "manual sync", state do
+  test "manual sync", _state do
     local = [
       database: "bar.db"
     ]
