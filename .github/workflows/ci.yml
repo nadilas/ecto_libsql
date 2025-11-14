@@ -63,10 +63,6 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         elixir: ['1.18.0', '1.17.0']
         otp: ['27.0', '26.2']
-        exclude:
-          # OTP 27 requires Elixir 1.17+
-          - elixir: '1.16.0'
-            otp: '27.0'
 
     steps:
       - name: Checkout code
