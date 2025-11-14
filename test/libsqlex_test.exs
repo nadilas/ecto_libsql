@@ -193,7 +193,6 @@ defmodule LibSqlExTest do
   test "transaction rollback", state do
     {:ok, state} = LibSqlEx.connect(state[:opts])
 
-    # Create table first
     create_table = %LibSqlEx.Query{
       statement:
         "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT)"
@@ -227,14 +226,19 @@ defmodule LibSqlExTest do
     assert {:error, _, _} = LibSqlEx.handle_commit([], state)
   end
 
-  # passed
-  @tag :skip
   test "local no sync", _state do
     local = [
       database: "bar.db"
     ]
 
     {:ok, state} = LibSqlEx.connect(local)
+
+    create_table = %LibSqlEx.Query{
+      statement:
+        "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT)"
+    }
+
+    {:ok, _, _, state} = LibSqlEx.handle_execute(create_table, [], [], state)
 
     query = %LibSqlEx.Query{statement: "INSERT INTO users (name, email) values (?1, ?2)"}
 
@@ -263,6 +267,13 @@ defmodule LibSqlExTest do
     ]
 
     {:ok, state} = LibSqlEx.connect(local)
+
+    create_table = %LibSqlEx.Query{
+      statement:
+        "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT)"
+    }
+
+    {:ok, _, _, state} = LibSqlEx.handle_execute(create_table, [], [], state)
 
     query = %LibSqlEx.Query{statement: "INSERT INTO users (name, email) values (?1, ?2)"}
 
