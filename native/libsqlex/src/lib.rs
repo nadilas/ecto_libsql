@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use lazy_static::lazy_static;
 use libsql::{
-    Builder, Cipher, EncryptionConfig, Rows, Statement, Transaction, TransactionBehavior, Value,
+    Builder, Cipher, EncryptionConfig, Rows, Transaction, TransactionBehavior, Value,
 };
 use once_cell::sync::Lazy;
 use rustler::atoms;
@@ -33,7 +33,7 @@ pub struct CursorData {
 
 lazy_static! {
     static ref TXN_REGISTRY: Mutex<HashMap<String, Transaction>> = Mutex::new(HashMap::new());
-    static ref STMT_REGISTRY: Mutex<HashMap<String, Statement>> = Mutex::new(HashMap::new());
+    static ref STMT_REGISTRY: Mutex<HashMap<String, (String, String)>> = Mutex::new(HashMap::new()); // (conn_id, sql)
     static ref CURSOR_REGISTRY: Mutex<HashMap<String, CursorData>> = Mutex::new(HashMap::new());
     pub static ref CONNECTION_REGISTRY: Mutex<HashMap<String, Arc<Mutex<LibSQLConn>>>> =
         Mutex::new(HashMap::new());
@@ -812,24 +812,13 @@ fn execute_transactional_batch<'a>(
 fn prepare_statement(conn_id: &str, sql: &str) -> NifResult<String> {
     let conn_map = CONNECTION_REGISTRY.lock().unwrap();
 
-    if let Some(client) = conn_map.get(conn_id) {
-        let client = client.clone();
-
-        let stmt = TOKIO_RUNTIME
-            .block_on(async {
-                client
-                    .lock()
-                    .unwrap()
-                    .client
-                    .lock()
-                    .unwrap()
-                    .prepare(sql)
-                    .await
-            })
-            .map_err(|e| rustler::Error::Term(Box::new(format!("Prepare failed: {}", e))))?;
-
+    if conn_map.get(conn_id).is_some() {
+        // Store the connection ID and SQL for later re-preparation
         let stmt_id = Uuid::new_v4().to_string();
-        STMT_REGISTRY.lock().unwrap().insert(stmt_id.clone(), stmt);
+        STMT_REGISTRY
+            .lock()
+            .unwrap()
+            .insert(stmt_id.clone(), (conn_id.to_string(), sql.to_string()));
 
         Ok(stmt_id)
     } else {
@@ -847,14 +836,18 @@ fn query_prepared<'a>(
     args: Vec<Term<'a>>,
 ) -> Result<NifResult<Term<'a>>, rustler::Error> {
     let conn_map = CONNECTION_REGISTRY.lock().unwrap();
-    let mut stmt_registry = STMT_REGISTRY.lock().unwrap();
+    let stmt_registry = STMT_REGISTRY.lock().unwrap();
 
     if conn_map.get(conn_id).is_none() {
         return Err(rustler::Error::Term(Box::new("Invalid connection ID")));
     }
-    let stmt = stmt_registry
-        .get_mut(stmt_id)
+
+    let (_stored_conn_id, sql) = stmt_registry
+        .get(stmt_id)
         .ok_or_else(|| rustler::Error::Term(Box::new("Statement not found")))?;
+
+    let client = conn_map.get(conn_id).unwrap().clone();
+    let sql = sql.clone();
 
     let decoded_args: Vec<Value> = args
         .into_iter()
@@ -862,7 +855,21 @@ fn query_prepared<'a>(
         .collect::<Result<_, _>>()
         .map_err(|e| rustler::Error::Term(Box::new(e)))?;
 
+    drop(stmt_registry); // Release lock before async operation
+    drop(conn_map); // Release lock before async operation
+
     let result = TOKIO_RUNTIME.block_on(async {
+        // Re-prepare the statement for each query to avoid parameter binding issues
+        let stmt = client
+            .lock()
+            .unwrap()
+            .client
+            .lock()
+            .unwrap()
+            .prepare(&sql)
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Prepare failed: {}", e))))?;
+
         let res = stmt.query(decoded_args).await;
 
         match res {
@@ -870,9 +877,6 @@ fn query_prepared<'a>(
                 let collected = collect_rows(env, rows)
                     .await
                     .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
-
-                // Note: Prepared statements don't auto-sync by default
-                // Users should explicitly sync if needed
 
                 Ok(Ok(collected))
             }
@@ -895,16 +899,18 @@ fn execute_prepared<'a>(
     sql_hint: &str, // For detecting if we need sync
 ) -> NifResult<u64> {
     let conn_map = CONNECTION_REGISTRY.lock().unwrap();
-    let mut stmt_registry = STMT_REGISTRY.lock().unwrap();
+    let stmt_registry = STMT_REGISTRY.lock().unwrap();
 
     if conn_map.get(conn_id).is_none() {
         return Err(rustler::Error::Term(Box::new("Invalid connection ID")));
     }
 
     let client = conn_map.get(conn_id).unwrap().clone();
-    let stmt = stmt_registry
-        .get_mut(stmt_id)
+    let (_stored_conn_id, sql) = stmt_registry
+        .get(stmt_id)
         .ok_or_else(|| rustler::Error::Term(Box::new("Statement not found")))?;
+
+    let sql = sql.clone();
 
     let decoded_args: Vec<Value> = args
         .into_iter()
@@ -914,7 +920,21 @@ fn execute_prepared<'a>(
 
     let is_sync = !matches!(detect_query_type(sql_hint), QueryType::Select);
 
+    drop(stmt_registry); // Release lock before async operation
+    drop(conn_map); // Release lock before async operation
+
     let result = TOKIO_RUNTIME.block_on(async {
+        // Re-prepare the statement for each execute to avoid parameter binding issues
+        let stmt = client
+            .lock()
+            .unwrap()
+            .client
+            .lock()
+            .unwrap()
+            .prepare(&sql)
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Prepare failed: {}", e))))?;
+
         let affected = stmt
             .execute(decoded_args)
             .await
