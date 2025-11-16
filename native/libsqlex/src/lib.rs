@@ -1,8 +1,6 @@
 use bytes::Bytes;
 use lazy_static::lazy_static;
-use libsql::{
-    Builder, Cipher, EncryptionConfig, Rows, Transaction, TransactionBehavior, Value,
-};
+use libsql::{Builder, Cipher, EncryptionConfig, Rows, Transaction, TransactionBehavior, Value};
 use once_cell::sync::Lazy;
 use rustler::atoms;
 use rustler::types::atom::nil;
