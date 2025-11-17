@@ -13,14 +13,14 @@ defmodule Ecto.Integration.LibSqlExTest do
     import Ecto.Changeset
 
     schema "users" do
-      field :name, :string
-      field :email, :string
-      field :age, :integer
-      field :active, :boolean, default: true
-      field :balance, :decimal
-      field :bio, :text
+      field(:name, :string)
+      field(:email, :string)
+      field(:age, :integer)
+      field(:active, :boolean, default: true)
+      field(:balance, :decimal)
+      field(:bio, :text)
 
-      has_many :posts, Ecto.Integration.LibSqlExTest.Post
+      has_many(:posts, Ecto.Integration.LibSqlExTest.Post)
 
       timestamps()
     end
@@ -39,13 +39,13 @@ defmodule Ecto.Integration.LibSqlExTest do
     import Ecto.Changeset
 
     schema "posts" do
-      field :title, :string
-      field :body, :text
-      field :published, :boolean, default: false
-      field :view_count, :integer, default: 0
-      field :published_at, :naive_datetime
+      field(:title, :string)
+      field(:body, :text)
+      field(:published, :boolean, default: false)
+      field(:view_count, :integer, default: 0)
+      field(:published_at, :naive_datetime)
 
-      belongs_to :user, Ecto.Integration.LibSqlExTest.User
+      belongs_to(:user, Ecto.Integration.LibSqlExTest.User)
 
       timestamps()
     end
@@ -312,9 +312,24 @@ defmodule Ecto.Integration.LibSqlExTest do
   describe "batch operations" do
     test "insert_all" do
       users_data = [
-        %{name: "Alice", email: "alice@example.com", inserted_at: ~N[2024-01-01 00:00:00], updated_at: ~N[2024-01-01 00:00:00]},
-        %{name: "Bob", email: "bob@example.com", inserted_at: ~N[2024-01-01 00:00:00], updated_at: ~N[2024-01-01 00:00:00]},
-        %{name: "Charlie", email: "charlie@example.com", inserted_at: ~N[2024-01-01 00:00:00], updated_at: ~N[2024-01-01 00:00:00]}
+        %{
+          name: "Alice",
+          email: "alice@example.com",
+          inserted_at: ~N[2024-01-01 00:00:00],
+          updated_at: ~N[2024-01-01 00:00:00]
+        },
+        %{
+          name: "Bob",
+          email: "bob@example.com",
+          inserted_at: ~N[2024-01-01 00:00:00],
+          updated_at: ~N[2024-01-01 00:00:00]
+        },
+        %{
+          name: "Charlie",
+          email: "charlie@example.com",
+          inserted_at: ~N[2024-01-01 00:00:00],
+          updated_at: ~N[2024-01-01 00:00:00]
+        }
       ]
 
       {3, _} = TestRepo.insert_all(User, users_data)
@@ -359,7 +374,8 @@ defmodule Ecto.Integration.LibSqlExTest do
 
   describe "type handling" do
     test "boolean fields work correctly" do
-      {:ok, user} = TestRepo.insert(%User{name: "Alice", email: "alice@example.com", active: false})
+      {:ok, user} =
+        TestRepo.insert(%User{name: "Alice", email: "alice@example.com", active: false})
 
       retrieved = TestRepo.get(User, user.id)
       assert retrieved.active == false
@@ -368,22 +384,24 @@ defmodule Ecto.Integration.LibSqlExTest do
     test "datetime fields work correctly" do
       now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
 
-      {:ok, post} = TestRepo.insert(%Post{
-        title: "Test",
-        body: "Body",
-        published_at: now
-      })
+      {:ok, post} =
+        TestRepo.insert(%Post{
+          title: "Test",
+          body: "Body",
+          published_at: now
+        })
 
       retrieved = TestRepo.get(Post, post.id)
       assert NaiveDateTime.compare(retrieved.published_at, now) == :eq
     end
 
     test "decimal fields work correctly" do
-      {:ok, user} = TestRepo.insert(%User{
-        name: "Alice",
-        email: "alice@example.com",
-        balance: Decimal.new("123.45")
-      })
+      {:ok, user} =
+        TestRepo.insert(%User{
+          name: "Alice",
+          email: "alice@example.com",
+          balance: Decimal.new("123.45")
+        })
 
       retrieved = TestRepo.get(User, user.id)
       assert Decimal.equal?(retrieved.balance, Decimal.new("123.45"))
@@ -392,11 +410,12 @@ defmodule Ecto.Integration.LibSqlExTest do
     test "text fields work correctly" do
       long_text = String.duplicate("a", 10000)
 
-      {:ok, user} = TestRepo.insert(%User{
-        name: "Alice",
-        email: "alice@example.com",
-        bio: long_text
-      })
+      {:ok, user} =
+        TestRepo.insert(%User{
+          name: "Alice",
+          email: "alice@example.com",
+          bio: long_text
+        })
 
       retrieved = TestRepo.get(User, user.id)
       assert retrieved.bio == long_text

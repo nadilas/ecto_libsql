@@ -7,6 +7,7 @@ defmodule Ecto.Adapters.LibSqlEx.ConnectionTest do
   describe "DDL generation" do
     test "creates table with columns" do
       table = %Table{name: :users, prefix: nil}
+
       columns = [
         {:add, :id, :id, [primary_key: true]},
         {:add, :name, :string, []},
@@ -34,6 +35,7 @@ defmodule Ecto.Adapters.LibSqlEx.ConnectionTest do
 
     test "creates table with composite primary key" do
       table = %Table{name: :user_roles, prefix: nil}
+
       columns = [
         {:add, :user_id, :integer, [primary_key: true]},
         {:add, :role_id, :integer, [primary_key: true]}
@@ -46,6 +48,7 @@ defmodule Ecto.Adapters.LibSqlEx.ConnectionTest do
 
     test "creates table with NOT NULL constraint" do
       table = %Table{name: :users, prefix: nil}
+
       columns = [
         {:add, :email, :string, [null: false]}
       ]
@@ -57,6 +60,7 @@ defmodule Ecto.Adapters.LibSqlEx.ConnectionTest do
 
     test "creates table with default values" do
       table = %Table{name: :posts, prefix: nil}
+
       columns = [
         {:add, :title, :string, [default: "Untitled"]},
         {:add, :count, :integer, [default: 0]},
@@ -242,7 +246,7 @@ defmodule Ecto.Adapters.LibSqlEx.ConnectionTest do
         [sql] = Connection.execute_ddl({:create, table, columns})
 
         assert sql =~ sqlite_type,
-          "Expected #{ecto_type} to map to #{sqlite_type}, but got: #{sql}"
+               "Expected #{ecto_type} to map to #{sqlite_type}, but got: #{sql}"
       end
     end
 
