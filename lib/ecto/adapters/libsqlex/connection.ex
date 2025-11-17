@@ -288,7 +288,19 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
     offset = offset(query, sources)
     lock = lock(query, sources)
 
-    [select, from, join, where, group_by, having, window, combination, order_by, limit, offset | lock]
+    [
+      select,
+      from,
+      join,
+      where,
+      group_by,
+      having,
+      window,
+      combination,
+      order_by,
+      limit,
+      offset | lock
+    ]
   end
 
   @impl true
@@ -300,10 +312,7 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
     {join, wheres} = using_join(query, :update_all, "FROM", sources)
     where = where(%{query | wheres: wheres}, sources)
 
-    ["UPDATE #{quote_table(from)} AS #{name}",
-     "SET", fields,
-     join,
-     where]
+    ["UPDATE #{quote_table(from)} AS #{name}", "SET", fields, join, where]
   end
 
   @impl true
@@ -331,23 +340,25 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
 
   @impl true
   def update(prefix, table, fields, filters, _returning) do
-    {fields, count} = intersperse_reduce(fields, ", ", 1, fn field, acc ->
-      {[quote_name(field), " = ?#{acc}"], acc + 1}
-    end)
+    {fields, count} =
+      intersperse_reduce(fields, ", ", 1, fn field, acc ->
+        {[quote_name(field), " = ?#{acc}"], acc + 1}
+      end)
 
-    {filters, _count} = intersperse_reduce(filters, " AND ", count, fn field, acc ->
-      {[quote_name(field), " = ?#{acc}"], acc + 1}
-    end)
+    {filters, _count} =
+      intersperse_reduce(filters, " AND ", count, fn field, acc ->
+        {[quote_name(field), " = ?#{acc}"], acc + 1}
+      end)
 
-    ["UPDATE ", quote_table(prefix, table), " SET ",
-     fields, " WHERE ", filters]
+    ["UPDATE ", quote_table(prefix, table), " SET ", fields, " WHERE ", filters]
   end
 
   @impl true
   def delete(prefix, table, filters, _returning) do
-    {filters, _} = intersperse_reduce(filters, " AND ", 1, fn field, acc ->
-      {[quote_name(field), " = ?#{acc}"], acc + 1}
-    end)
+    {filters, _} =
+      intersperse_reduce(filters, " AND ", 1, fn field, acc ->
+        {[quote_name(field), " = ?#{acc}"], acc + 1}
+      end)
 
     ["DELETE FROM ", quote_table(prefix, table), " WHERE ", filters]
   end
@@ -369,12 +380,15 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
     # SQLite doesn't support multiple queries in a single call
     # For now, split and execute sequentially
     queries = String.split(sql, ";", trim: true)
-    results = Enum.map(queries, fn q ->
-      case execute(conn, String.trim(q), params, opts) do
-        {:ok, result} -> result
-        {:error, _} = error -> error
-      end
-    end)
+
+    results =
+      Enum.map(queries, fn q ->
+        case execute(conn, String.trim(q), params, opts) do
+          {:ok, result} -> result
+          {:error, _} = error -> error
+        end
+      end)
+
     {:ok, results}
   end
 
@@ -396,8 +410,10 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
     case elem(sources, pos) do
       {table, schema, _} ->
         {quote_table(nil, table), schema}
+
       {:fragment, _, _} ->
         {nil, nil}
+
       %Ecto.SubQuery{} ->
         {nil, nil}
     end
@@ -421,6 +437,7 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
     intersperse_map(fields, ", ", fn
       {:&, _, [idx]} ->
         {_source, schema} = elem(sources, idx)
+
         if schema do
           Enum.map_join(schema.__schema__(:fields), ", ", &[quote_name(&1)])
         else
@@ -436,12 +453,16 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   end
 
   defp join(%{joins: []}, _sources), do: []
+
   defp join(%{joins: joins} = query, sources) do
-    [?\s | intersperse_map(joins, ?\s, fn
-      %Ecto.Query.JoinExpr{on: %{expr: expr}, qual: qual, ix: ix, source: source} ->
-        {join, name} = get_source(query, sources, ix)
-        [join_qual(qual), join, " AS ", name, " ON ", expr(expr, sources, query)]
-    end)]
+    [
+      ?\s
+      | intersperse_map(joins, ?\s, fn
+          %Ecto.Query.JoinExpr{on: %{expr: expr}, qual: qual, ix: ix, source: source} ->
+            {join, name} = get_source(query, sources, ix)
+            [join_qual(qual), join, " AS ", name, " ON ", expr(expr, sources, query)]
+        end)
+    ]
   end
 
   defp join_qual(:inner), do: "INNER JOIN "
@@ -459,15 +480,19 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   end
 
   defp group_by(%{group_bys: []}, _sources), do: []
+
   defp group_by(%{group_bys: group_bys} = query, sources) do
-    [" GROUP BY " |
-     intersperse_map(group_bys, ", ", fn
-       %Ecto.Query.QueryExpr{expr: expr} ->
-         intersperse_map(expr, ", ", &expr(&1, sources, query))
-     end)]
+    [
+      " GROUP BY "
+      | intersperse_map(group_bys, ", ", fn
+          %Ecto.Query.QueryExpr{expr: expr} ->
+            intersperse_map(expr, ", ", &expr(&1, sources, query))
+        end)
+    ]
   end
 
   defp window(%{windows: []}, _sources), do: []
+
   defp window(%{windows: windows} = query, sources) do
     intersperse_map(windows, ", ", fn {name, %{expr: kw}} ->
       [quote_name(name), " AS ", window_exprs(kw, sources, query)]
@@ -492,27 +517,33 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   end
 
   defp order_by(%{order_bys: []}, _sources), do: []
+
   defp order_by(%{order_bys: order_bys} = query, sources) do
-    [" ORDER BY " |
-     intersperse_map(order_bys, ", ", fn %Ecto.Query.QueryExpr{expr: expr} ->
-       intersperse_map(expr, ", ", &order_by_expr(&1, sources, query))
-     end)]
+    [
+      " ORDER BY "
+      | intersperse_map(order_bys, ", ", fn %Ecto.Query.QueryExpr{expr: expr} ->
+          intersperse_map(expr, ", ", &order_by_expr(&1, sources, query))
+        end)
+    ]
   end
 
   defp order_by_expr({dir, expr}, sources, query) do
     str = expr(expr, sources, query)
+
     case dir do
-      :asc  -> str
+      :asc -> str
       :desc -> [str, " DESC"]
     end
   end
 
   defp limit(%{limit: nil}, _sources), do: []
+
   defp limit(%{limit: %{expr: expr}} = query, sources) do
     [" LIMIT ", expr(expr, sources, query)]
   end
 
   defp offset(%{offset: nil}, _sources), do: []
+
   defp offset(%{offset: %{expr: expr}} = query, sources) do
     [" OFFSET ", expr(expr, sources, query)]
   end
@@ -520,14 +551,19 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   defp lock(query, _sources), do: []
 
   defp boolean(_name, [], _sources, _query), do: []
+
   defp boolean(name, [%{expr: expr, op: op} | query_exprs], sources, query) do
-    [name,
-     Enum.reduce(query_exprs, {op, paren_expr(expr, sources, query)}, fn
-       %{expr: expr, op: op}, {op, acc} ->
-         {op, [acc, operator_to_boolean(op), paren_expr(expr, sources, query)]}
-       %{expr: expr, op: op}, {_, acc} ->
-         {op, [?(, acc, ?), operator_to_boolean(op), paren_expr(expr, sources, query)]}
-     end) |> elem(1)]
+    [
+      name,
+      Enum.reduce(query_exprs, {op, paren_expr(expr, sources, query)}, fn
+        %{expr: expr, op: op}, {op, acc} ->
+          {op, [acc, operator_to_boolean(op), paren_expr(expr, sources, query)]}
+
+        %{expr: expr, op: op}, {_, acc} ->
+          {op, [?(, acc, ?), operator_to_boolean(op), paren_expr(expr, sources, query)]}
+      end)
+      |> elem(1)
+    ]
   end
 
   defp operator_to_boolean(:and), do: " AND "
@@ -543,15 +579,18 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   end
 
   defp combination(%{combinations: []}), do: []
+
   defp combination(%{combinations: combinations}) do
     []
   end
 
   defp update_fields(%{updates: updates} = query, sources) do
-    for(%{expr: expr} <- updates,
-        {op, kw} <- expr,
-        {key, value} <- kw,
-        do: update_op(op, key, value, sources, query))
+    for(
+      %{expr: expr} <- updates,
+      {op, kw} <- expr,
+      {key, value} <- kw,
+      do: update_op(op, key, value, sources, query)
+    )
     |> Enum.intersperse(", ")
   end
 
@@ -564,6 +603,7 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   end
 
   defp using_join(%{joins: []}, _kind, _prefix, _sources), do: {[], []}
+
   defp using_join(%{joins: joins} = query, kind, prefix, sources) do
     {[], query.wheres}
   end
@@ -608,9 +648,11 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   defp quote_value(nil), do: "NULL"
   defp quote_value(true), do: "1"
   defp quote_value(false), do: "0"
+
   defp quote_value(value) when is_binary(value) do
     [?', escape_string(value), ?']
   end
+
   defp quote_value(value) when is_integer(value) or is_float(value) do
     to_string(value)
   end
