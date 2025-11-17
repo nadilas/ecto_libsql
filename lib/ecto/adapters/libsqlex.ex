@@ -63,13 +63,16 @@ defmodule Ecto.Adapters.LibSqlEx do
     else
       # For local or replica mode, create the database file
       case File.exists?(database) do
-        true -> {:error, :already_up}
+        true ->
+          {:error, :already_up}
+
         false ->
           # Connect to create the database
           case LibSqlEx.connect(opts) do
             {:ok, state} ->
               LibSqlEx.disconnect([], state)
               :ok
+
             {:error, reason} ->
               {:error, reason}
           end
@@ -118,6 +121,7 @@ defmodule Ecto.Adapters.LibSqlEx do
       {output, 0} ->
         File.write!(path, output)
         {:ok, path}
+
       {output, _} ->
         {:error, output}
     end
@@ -135,6 +139,7 @@ defmodule Ecto.Adapters.LibSqlEx do
         {:ok, _result, _state} = LibSqlEx.handle_execute(sql, [], [], state)
         LibSqlEx.disconnect([], state)
         {:ok, path}
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -161,6 +166,7 @@ defmodule Ecto.Adapters.LibSqlEx do
       {:error, _} -> :error
     end
   end
+
   defp datetime_decode(value), do: {:ok, value}
 
   defp date_decode(value) when is_binary(value) do
@@ -169,6 +175,7 @@ defmodule Ecto.Adapters.LibSqlEx do
       {:error, _} -> :error
     end
   end
+
   defp date_decode(value), do: {:ok, value}
 
   defp time_decode(value) when is_binary(value) do
@@ -177,6 +184,7 @@ defmodule Ecto.Adapters.LibSqlEx do
       {:error, _} -> :error
     end
   end
+
   defp time_decode(value), do: {:ok, value}
 
   @doc false

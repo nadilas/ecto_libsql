@@ -47,10 +47,13 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
     case message do
       "UNIQUE constraint failed: " <> _ ->
         [unique: extract_constraint_name(message)]
+
       "FOREIGN KEY constraint failed" ->
         [foreign_key: :unknown]
+
       "CHECK constraint failed: " <> _ ->
         [check: extract_constraint_name(message)]
+
       _ ->
         []
     end
@@ -70,7 +73,8 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   def ddl_logs(_), do: []
 
   @impl true
-  def execute_ddl({command, %Ecto.Migration.Table{} = table, columns}) when command in [:create, :create_if_not_exists] do
+  def execute_ddl({command, %Ecto.Migration.Table{} = table, columns})
+      when command in [:create, :create_if_not_exists] do
     table_name = quote_table(table.prefix, table.name)
     if_not_exists = if command == :create_if_not_exists, do: " IF NOT EXISTS", else: ""
 
@@ -101,14 +105,16 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
         ["ALTER TABLE #{table_name} ADD COLUMN #{column_def}"]
 
       {:modify, _name, _type, _opts} ->
-        raise ArgumentError, "ALTER COLUMN is not supported by SQLite. " <>
-          "You need to recreate the table instead."
+        raise ArgumentError,
+              "ALTER COLUMN is not supported by SQLite. " <>
+                "You need to recreate the table instead."
 
       {:remove, name, _type, _opts} ->
         # SQLite doesn't support DROP COLUMN directly (before 3.35.0)
         # For now, raise an error suggesting table recreation
-        raise ArgumentError, "DROP COLUMN for #{name} is not supported by older SQLite versions. " <>
-          "You need to recreate the table instead."
+        raise ArgumentError,
+              "DROP COLUMN for #{name} is not supported by older SQLite versions. " <>
+                "You need to recreate the table instead."
     end)
   end
 
@@ -147,7 +153,9 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
     ["ALTER TABLE #{table_name} RENAME COLUMN #{quote_name(old_name)} TO #{quote_name(new_name)}"]
   end
 
-  def execute_ddl({:rename, %Ecto.Migration.Table{} = old_table, %Ecto.Migration.Table{} = new_table}) do
+  def execute_ddl(
+        {:rename, %Ecto.Migration.Table{} = old_table, %Ecto.Migration.Table{} = new_table}
+      ) do
     old_name = quote_table(old_table.prefix, old_table.name)
     new_name = quote_table(new_table.prefix, new_table.name)
     ["ALTER TABLE #{old_name} RENAME TO #{new_name}"]
@@ -184,9 +192,12 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   defp column_type(:naive_datetime_usec, _opts), do: "DATETIME"
   defp column_type(:utc_datetime, _opts), do: "DATETIME"
   defp column_type(:utc_datetime_usec, _opts), do: "DATETIME"
+
   defp column_type({:array, _}, _opts) do
-    raise ArgumentError, "SQLite does not support array types. Use JSON or separate tables instead."
+    raise ArgumentError,
+          "SQLite does not support array types. Use JSON or separate tables instead."
   end
+
   defp column_type(type, _opts) when is_atom(type), do: Atom.to_string(type) |> String.upcase()
   defp column_type(type, _opts), do: type
 
@@ -213,9 +224,10 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   defp column_default({:fragment, expr}), do: " DEFAULT #{expr}"
 
   defp table_options(table, columns) do
-    pk = Enum.filter(columns, fn {:add, _name, _type, opts} ->
-      Keyword.get(opts, :primary_key, false)
-    end)
+    pk =
+      Enum.filter(columns, fn {:add, _name, _type, opts} ->
+        Keyword.get(opts, :primary_key, false)
+      end)
 
     cond do
       length(pk) > 1 ->
@@ -237,10 +249,12 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   defp quote_table(prefix, name), do: quote_name(prefix) <> "." <> quote_name(name)
 
   defp quote_name(name) when is_atom(name), do: quote_name(Atom.to_string(name))
+
   defp quote_name(name) do
     if String.contains?(name, "\"") do
       raise ArgumentError, "bad table/column name #{inspect(name)}"
     end
+
     ~s("#{name}")
   end
 
