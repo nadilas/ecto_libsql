@@ -475,10 +475,12 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   end
 
   defp window_exprs(kw, sources, query) do
-    [?(,
-     if kw[:partition_by] != [], do: window_partition_by(kw, sources, query), else: [],
-     window_order_by(kw, sources, query),
-     ?)]
+    partition =
+      if kw[:partition_by] != [],
+        do: window_partition_by(kw, sources, query),
+        else: []
+
+    [?(, partition, window_order_by(kw, sources, query), ?)]
   end
 
   defp window_partition_by(kw, sources, query) do
