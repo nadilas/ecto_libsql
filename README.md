@@ -311,6 +311,232 @@ opts = [
 7. **Disable auto-sync** and sync manually for better control in high-write scenarios
 8. **Use Encryption** for sensitive data without performance penalty
 
+## Ecto Integration
+
+LibSqlEx provides a full Ecto adapter, making it easy to use with Phoenix and other Elixir applications.
+
+### Installation with Ecto
+
+Add both `libsqlex` and `ecto_sql` to your dependencies:
+
+```elixir
+def deps do
+  [
+    {:libsqlex, "~> 0.2.0"},
+    {:ecto_sql, "~> 3.11"}
+  ]
+end
+```
+
+### Configuration
+
+Configure your repository in `config/config.exs`:
+
+```elixir
+# Local SQLite database
+config :my_app, MyApp.Repo,
+  adapter: Ecto.Adapters.LibSqlEx,
+  database: "my_app.db"
+
+# Remote Turso (cloud only)
+config :my_app, MyApp.Repo,
+  adapter: Ecto.Adapters.LibSqlEx,
+  uri: "libsql://your-database.turso.io",
+  auth_token: System.get_env("TURSO_AUTH_TOKEN")
+
+# Remote Replica (local file + cloud sync - RECOMMENDED)
+config :my_app, MyApp.Repo,
+  adapter: Ecto.Adapters.LibSqlEx,
+  database: "replica.db",
+  uri: "libsql://your-database.turso.io",
+  auth_token: System.get_env("TURSO_AUTH_TOKEN"),
+  sync: true  # Auto-sync after writes
+```
+
+### Define Your Repo
+
+```elixir
+defmodule MyApp.Repo do
+  use Ecto.Repo,
+    otp_app: :my_app,
+    adapter: Ecto.Adapters.LibSqlEx
+end
+```
+
+### Define Schemas
+
+```elixir
+defmodule MyApp.User do
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  schema "users" do
+    field :name, :string
+    field :email, :string
+    field :age, :integer
+    field :active, :boolean, default: true
+
+    has_many :posts, MyApp.Post
+
+    timestamps()
+  end
+
+  def changeset(user, attrs) do
+    user
+    |> cast(attrs, [:name, :email, :age, :active])
+    |> validate_required([:name, :email])
+    |> validate_format(:email, ~r/@/)
+    |> unique_constraint(:email)
+  end
+end
+```
+
+### Create Migrations
+
+Create a migration file in `priv/repo/migrations/`:
+
+```elixir
+defmodule MyApp.Repo.Migrations.CreateUsers do
+  use Ecto.Migration
+
+  def change do
+    create table(:users) do
+      add :name, :string, null: false
+      add :email, :string, null: false
+      add :age, :integer
+      add :active, :boolean, default: true
+
+      timestamps()
+    end
+
+    create unique_index(:users, [:email])
+  end
+end
+```
+
+Run migrations:
+
+```bash
+mix ecto.create      # Create the database
+mix ecto.migrate     # Run migrations
+```
+
+### Query with Ecto
+
+```elixir
+import Ecto.Query
+alias MyApp.{Repo, User}
+
+# Insert
+{:ok, user} = Repo.insert(%User{name: "Alice", email: "alice@example.com"})
+
+# Get by ID
+user = Repo.get(User, 1)
+
+# Get by field
+user = Repo.get_by(User, email: "alice@example.com")
+
+# Query with conditions
+users = User
+  |> where([u], u.age > 18)
+  |> order_by([u], desc: u.inserted_at)
+  |> Repo.all()
+
+# Update
+user
+|> Ecto.Changeset.change(age: 31)
+|> Repo.update()
+
+# Delete
+Repo.delete(user)
+
+# Aggregations
+count = User |> select([u], count(u.id)) |> Repo.one()
+
+# Transactions
+Repo.transaction(fn ->
+  {:ok, user} = Repo.insert(%User{name: "Bob", email: "bob@example.com"})
+  {:ok, post} = Repo.insert(%Post{title: "Hello", user_id: user.id})
+  {user, post}
+end)
+```
+
+### Ecto Features Supported
+
+- ✅ **Schemas & Changesets**: Full Ecto.Schema support
+- ✅ **Migrations**: Create, alter, and drop tables
+- ✅ **Indexes**: Regular and unique indexes with partial index support
+- ✅ **Associations**: `has_many`, `belongs_to`, `many_to_many`
+- ✅ **Queries**: All Ecto.Query features
+- ✅ **Transactions**: Full transaction support with all isolation levels
+- ✅ **Constraints**: Unique, foreign key, and check constraints
+- ✅ **Preloading**: Eager loading associations
+- ✅ **Aggregations**: count, sum, avg, min, max
+- ✅ **Stream**: Stream large result sets
+- ✅ **Batch Operations**: `insert_all`, `update_all`, `delete_all`
+
+### Phoenix Integration
+
+LibSqlEx works seamlessly with Phoenix. Add it to your Phoenix app:
+
+1. Add dependencies to `mix.exs`:
+```elixir
+{:libsqlex, "~> 0.2.0"},
+{:ecto_sql, "~> 3.11"}
+```
+
+2. Configure in `config/dev.exs`:
+```elixir
+config :my_app, MyApp.Repo,
+  adapter: Ecto.Adapters.LibSqlEx,
+  database: "my_app_dev.db",
+  pool_size: 5
+```
+
+3. Start your Phoenix app:
+```bash
+mix ecto.create
+mix ecto.migrate
+mix phx.server
+```
+
+### Best Practices
+
+**For Development (Local):**
+```elixir
+config :my_app, MyApp.Repo,
+  adapter: Ecto.Adapters.LibSqlEx,
+  database: "dev.db"
+```
+
+**For Production (Turso Replica):**
+```elixir
+config :my_app, MyApp.Repo,
+  adapter: Ecto.Adapters.LibSqlEx,
+  database: "prod_replica.db",
+  uri: System.get_env("TURSO_URL"),
+  auth_token: System.get_env("TURSO_AUTH_TOKEN"),
+  sync: true,
+  pool_size: 10
+```
+
+**Benefits of Remote Replica Mode:**
+- 🚀 Microsecond read latency (local file)
+- 🔄 Automatic sync to cloud (Turso)
+- 💪 Works offline, syncs when online
+- 🌍 Distribute globally via Turso edge
+
+### Limitations
+
+SQLite/libSQL has some limitations compared to PostgreSQL:
+
+- **No ALTER COLUMN**: Can't modify column types (need to recreate table)
+- **No DROP COLUMN** (on older SQLite): Use table recreation pattern
+- **No array types**: Use JSON or separate tables
+- **No native UUID type**: Stored as TEXT (still works with Ecto.UUID)
+
+Most of these limitations are minor for typical applications and the benefits (embedded database, Turso sync, simplicity) often outweigh them.
+
 ## Documentation
 
 Full documentation available at <https://hexdocs.pm/libsqlex>.
