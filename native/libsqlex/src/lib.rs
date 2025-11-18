@@ -188,13 +188,14 @@ pub fn query_with_trx_args<'a>(
         .collect::<Result<_, _>>()
         .map_err(|e| rustler::Error::Term(Box::new(e)))?;
 
-    TOKIO_RUNTIME
-        .block_on(async {
-            let res_rows = trx.query(&query, decoded_args).await
-                .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
+    TOKIO_RUNTIME.block_on(async {
+        let res_rows = trx
+            .query(&query, decoded_args)
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
 
-            collect_rows(env, res_rows).await
-        })
+        collect_rows(env, res_rows).await
+    })
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
@@ -1196,8 +1197,14 @@ mod tests {
         #[test]
         fn test_detect_select_query() {
             assert_eq!(detect_query_type("SELECT * FROM users"), QueryType::Select);
-            assert_eq!(detect_query_type("  SELECT id FROM posts"), QueryType::Select);
-            assert_eq!(detect_query_type("\nSELECT name FROM items"), QueryType::Select);
+            assert_eq!(
+                detect_query_type("  SELECT id FROM posts"),
+                QueryType::Select
+            );
+            assert_eq!(
+                detect_query_type("\nSELECT name FROM items"),
+                QueryType::Select
+            );
             assert_eq!(detect_query_type("select * from users"), QueryType::Select);
         }
 
@@ -1219,7 +1226,10 @@ mod tests {
                 detect_query_type("UPDATE users SET name = 'Bob' WHERE id = 1"),
                 QueryType::Update
             );
-            assert_eq!(detect_query_type("update posts set title = 'New'"), QueryType::Update);
+            assert_eq!(
+                detect_query_type("update posts set title = 'New'"),
+                QueryType::Update
+            );
         }
 
         #[test]
@@ -1253,15 +1263,27 @@ mod tests {
 
         #[test]
         fn test_detect_unknown_query() {
-            assert_eq!(detect_query_type("PRAGMA table_info(users)"), QueryType::Other);
-            assert_eq!(detect_query_type("EXPLAIN SELECT * FROM users"), QueryType::Other);
+            assert_eq!(
+                detect_query_type("PRAGMA table_info(users)"),
+                QueryType::Other
+            );
+            assert_eq!(
+                detect_query_type("EXPLAIN SELECT * FROM users"),
+                QueryType::Other
+            );
             assert_eq!(detect_query_type(""), QueryType::Other);
         }
 
         #[test]
         fn test_detect_with_whitespace() {
-            assert_eq!(detect_query_type("   \n\t  SELECT * FROM users"), QueryType::Select);
-            assert_eq!(detect_query_type("\t\tINSERT INTO users"), QueryType::Insert);
+            assert_eq!(
+                detect_query_type("   \n\t  SELECT * FROM users"),
+                QueryType::Select
+            );
+            assert_eq!(
+                detect_query_type("\t\tINSERT INTO users"),
+                QueryType::Insert
+            );
         }
     }
 
@@ -1321,7 +1343,10 @@ mod tests {
 
             // Verify the data
             let mut rows = conn
-                .query("SELECT id, age FROM users WHERE id = ?1", vec![Value::Integer(1)])
+                .query(
+                    "SELECT id, age FROM users WHERE id = ?1",
+                    vec![Value::Integer(1)],
+                )
                 .await
                 .unwrap();
 
@@ -1364,7 +1389,10 @@ mod tests {
             let row = rows.next().await.unwrap().unwrap();
             assert_eq!(row.get::<i64>(0).unwrap(), 1);
             let price = row.get::<f64>(1).unwrap();
-            assert!((price - 19.99).abs() < 0.01, "Price should be approximately 19.99");
+            assert!(
+                (price - 19.99).abs() < 0.01,
+                "Price should be approximately 19.99"
+            );
 
             cleanup_test_db(&db_path);
         }
@@ -1391,7 +1419,10 @@ mod tests {
 
             // Verify the data
             let mut rows = conn
-                .query("SELECT name FROM users WHERE id = ?1", vec![Value::Integer(1)])
+                .query(
+                    "SELECT name FROM users WHERE id = ?1",
+                    vec![Value::Integer(1)],
+                )
                 .await
                 .unwrap();
 
@@ -1482,13 +1513,19 @@ mod tests {
             .unwrap();
 
             // Test prepared statement with first parameter
-            let stmt1 = conn.prepare("SELECT name FROM users WHERE id = ?1").await.unwrap();
+            let stmt1 = conn
+                .prepare("SELECT name FROM users WHERE id = ?1")
+                .await
+                .unwrap();
             let mut rows1 = stmt1.query(vec![Value::Integer(1)]).await.unwrap();
             let row1 = rows1.next().await.unwrap().unwrap();
             assert_eq!(row1.get::<String>(0).unwrap(), "Alice");
 
             // Test prepared statement with second parameter (prepare again, mimicking NIF behavior)
-            let stmt2 = conn.prepare("SELECT name FROM users WHERE id = ?1").await.unwrap();
+            let stmt2 = conn
+                .prepare("SELECT name FROM users WHERE id = ?1")
+                .await
+                .unwrap();
             let mut rows2 = stmt2.query(vec![Value::Integer(2)]).await.unwrap();
             let row2 = rows2.next().await.unwrap().unwrap();
             assert_eq!(row2.get::<String>(0).unwrap(), "Bob");
@@ -1516,7 +1553,10 @@ mod tests {
 
             // Verify blob data
             let mut rows = conn
-                .query("SELECT data FROM files WHERE id = ?1", vec![Value::Integer(1)])
+                .query(
+                    "SELECT data FROM files WHERE id = ?1",
+                    vec![Value::Integer(1)],
+                )
                 .await
                 .unwrap();
 
@@ -1546,7 +1586,10 @@ mod tests {
 
             // Verify null handling
             let mut rows = conn
-                .query("SELECT email FROM users WHERE id = ?1", vec![Value::Integer(1)])
+                .query(
+                    "SELECT email FROM users WHERE id = ?1",
+                    vec![Value::Integer(1)],
+                )
                 .await
                 .unwrap();
 
@@ -1575,16 +1618,28 @@ mod tests {
         fn test_registry_initialization() {
             // Just verify registries can be accessed
             let conn_registry = CONNECTION_REGISTRY.lock();
-            assert!(conn_registry.is_ok(), "Connection registry should be accessible");
+            assert!(
+                conn_registry.is_ok(),
+                "Connection registry should be accessible"
+            );
 
             let txn_registry = TXN_REGISTRY.lock();
-            assert!(txn_registry.is_ok(), "Transaction registry should be accessible");
+            assert!(
+                txn_registry.is_ok(),
+                "Transaction registry should be accessible"
+            );
 
             let stmt_registry = STMT_REGISTRY.lock();
-            assert!(stmt_registry.is_ok(), "Statement registry should be accessible");
+            assert!(
+                stmt_registry.is_ok(),
+                "Statement registry should be accessible"
+            );
 
             let cursor_registry = CURSOR_REGISTRY.lock();
-            assert!(cursor_registry.is_ok(), "Cursor registry should be accessible");
+            assert!(
+                cursor_registry.is_ok(),
+                "Cursor registry should be accessible"
+            );
         }
     }
 }
