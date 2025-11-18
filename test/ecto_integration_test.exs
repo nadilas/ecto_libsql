@@ -18,7 +18,7 @@ defmodule Ecto.Integration.LibSqlExTest do
       field(:age, :integer)
       field(:active, :boolean, default: true)
       field(:balance, :decimal)
-      field(:bio, :text)
+      field(:bio, :string)
 
       has_many(:posts, Ecto.Integration.LibSqlExTest.Post)
 

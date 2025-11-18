@@ -61,7 +61,8 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
 
   defp extract_constraint_name(message) do
     # Extract constraint name from SQLite error messages
-    case Regex.run(~r/constraint failed: (\w+)/, message) do
+    # Format: "UNIQUE constraint failed: users.email" -> :email
+    case Regex.run(~r/constraint failed: (?:\w+\.)?(\w+)/, message) do
       [_, name] -> String.to_atom(name)
       _ -> :unknown
     end
