@@ -364,10 +364,10 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
   end
 
   @impl true
-  def explain_query(conn, query, _params, opts) do
-    {query, params, _opts} = all(query)
-    query = "EXPLAIN QUERY PLAN " <> query
-    execute(conn, query, params, opts)
+  def explain_query(conn, query, params, opts) do
+    sql = all(query)
+    explain_sql = IO.iodata_to_binary(["EXPLAIN QUERY PLAN " | sql])
+    execute(conn, explain_sql, params, opts)
   end
 
   @impl true
@@ -408,14 +408,14 @@ defmodule Ecto.Adapters.LibSqlEx.Connection do
 
   defp create_name(sources, pos) do
     case elem(sources, pos) do
-      {table, schema, _} ->
-        {quote_table(nil, table), schema}
-
       {:fragment, _, _} ->
         {nil, nil}
 
       %Ecto.SubQuery{} ->
         {nil, nil}
+
+      {table, schema, _} ->
+        {quote_table(nil, table), schema}
     end
   end
 

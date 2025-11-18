@@ -42,7 +42,6 @@ defmodule Ecto.Adapters.LibSqlEx do
 
   @behaviour Ecto.Adapter.Storage
   @behaviour Ecto.Adapter.Structure
-  @behaviour Ecto.Adapter.Migration
 
   ## Adapter Configuration
 
