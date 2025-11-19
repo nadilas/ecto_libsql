@@ -204,8 +204,50 @@ jobs:
       - name: Compile project
         run: mix compile
 
-      - name: Run full test suite
-        run: mix test --trace
+      - name: Run full test suite (excluding Turso remote tests)
+        run: mix test --trace --exclude turso_remote
+
+  turso-remote-tests:
+    name: Turso Remote Database Tests
+    runs-on: ubuntu-latest
+    needs: [rust-checks, elixir-tests-latest, elixir-tests-compatibility]
+    # Only run if secrets are available (won't run on forks or without secrets)
+    if: ${{ secrets.TURSO_DB_URI != '' && secrets.TURSO_AUTH_TOKEN != '' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18.0'
+          otp-version: '27.0'
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+            ~/.cargo
+            native/ecto_libsql/target/
+          key: ${{ runner.os }}-turso-${{ hashFiles('**/mix.lock', '**/Cargo.lock') }}
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile project
+        run: mix compile
+
+      - name: Run Turso remote tests
+        env:
+          TURSO_DB_URI: ${{ secrets.TURSO_DB_URI }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: mix test test/turso_remote_test.exs --trace
 
   all-checks-pass:
     name: All Checks Pass
@@ -224,3 +266,10 @@ jobs:
             exit 1
           fi
           echo "All checks passed successfully!"
+
+          # Note: Turso remote tests are optional and don't block the build
+          if [ "${{ needs.turso-remote-tests.result }}" == "success" ]; then
+            echo "Turso remote tests also passed!"
+          elif [ "${{ needs.turso-remote-tests.result }}" == "skipped" ]; then
+            echo "Turso remote tests were skipped (credentials not available)"
+          fi
