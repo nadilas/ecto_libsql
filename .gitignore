@@ -30,3 +30,7 @@ bar.db
 bar.db-info
 bar.db-shm
 bar.db-wal
+
+# Test databases
+test_encrypted*.db
+test_encrypted*.db-*

@@ -726,4 +726,174 @@ defmodule EctoLibSqlTest do
     assert decoded["age"] == 30
     assert "developer" in decoded["tags"]
   end
+
+  describe "encryption" do
+    @encryption_key "this-is-a-test-encryption-key-with-32-plus-characters"
+
+    test "local database with encryption" do
+      # Create encrypted database
+      {:ok, state} =
+        EctoLibSql.connect(
+          database: "test_encrypted.db",
+          encryption_key: @encryption_key
+        )
+
+      # Create table and insert data
+      {:ok, _query, _result, state} =
+        EctoLibSql.handle_execute(
+          "CREATE TABLE IF NOT EXISTS secure_data (id INTEGER PRIMARY KEY, secret TEXT)",
+          [],
+          [],
+          state
+        )
+
+      {:ok, _query, _result, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO secure_data (secret) VALUES (?)",
+          ["top secret information"],
+          [],
+          state
+        )
+
+      # Query the data back
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute(
+          "SELECT secret FROM secure_data WHERE id = 1",
+          [],
+          [],
+          state
+        )
+
+      assert result.rows == [["top secret information"]]
+
+      # Disconnect
+      EctoLibSql.disconnect([], state)
+
+      # Verify we can reconnect with the same key
+      {:ok, state2} =
+        EctoLibSql.connect(
+          database: "test_encrypted.db",
+          encryption_key: @encryption_key
+        )
+
+      {:ok, _query, result2, _state2} =
+        EctoLibSql.handle_execute(
+          "SELECT secret FROM secure_data WHERE id = 1",
+          [],
+          [],
+          state2
+        )
+
+      assert result2.rows == [["top secret information"]]
+
+      EctoLibSql.disconnect([], state2)
+
+      # Clean up
+      File.rm("test_encrypted.db")
+    end
+
+    test "cannot open encrypted database without key" do
+      # Create encrypted database
+      {:ok, state} =
+        EctoLibSql.connect(
+          database: "test_encrypted2.db",
+          encryption_key: @encryption_key
+        )
+
+      {:ok, _query, _result, state} =
+        EctoLibSql.handle_execute(
+          "CREATE TABLE IF NOT EXISTS data (id INTEGER PRIMARY KEY)",
+          [],
+          [],
+          state
+        )
+
+      EctoLibSql.disconnect([], state)
+
+      # Try to open without encryption key - should fail or give errors
+      case EctoLibSql.connect(database: "test_encrypted2.db") do
+        {:ok, state_no_key} ->
+          # If it connects, queries should fail
+          result =
+            EctoLibSql.handle_execute(
+              "SELECT * FROM data",
+              [],
+              [],
+              state_no_key
+            )
+
+          # Should get an error
+          assert match?({:error, _}, result)
+          EctoLibSql.disconnect([], state_no_key)
+
+        {:error, _} ->
+          # Connection itself might fail, which is also acceptable
+          :ok
+      end
+
+      # Clean up
+      File.rm("test_encrypted2.db")
+    end
+
+    test "cannot open encrypted database with wrong key" do
+      # Create encrypted database
+      {:ok, state} =
+        EctoLibSql.connect(
+          database: "test_encrypted3.db",
+          encryption_key: @encryption_key
+        )
+
+      {:ok, _query, _result, state} =
+        EctoLibSql.handle_execute(
+          "CREATE TABLE IF NOT EXISTS data (id INTEGER PRIMARY KEY, value TEXT)",
+          [],
+          [],
+          state
+        )
+
+      {:ok, _query, _result, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO data (value) VALUES (?)",
+          ["secret"],
+          [],
+          state
+        )
+
+      EctoLibSql.disconnect([], state)
+
+      # Try to open with wrong encryption key
+      wrong_key = "wrong-encryption-key-that-is-also-32-characters-long"
+
+      case EctoLibSql.connect(database: "test_encrypted3.db", encryption_key: wrong_key) do
+        {:ok, state_wrong} ->
+          # If it connects, queries should fail or return garbage
+          result =
+            EctoLibSql.handle_execute(
+              "SELECT value FROM data",
+              [],
+              [],
+              state_wrong
+            )
+
+          # Should either error or return corrupted data
+          case result do
+            {:error, _} ->
+              :ok
+
+            {:ok, _query, result_data, _} ->
+              # Data should not match the original
+              refute result_data.rows == [["secret"]]
+          end
+
+          EctoLibSql.disconnect([], state_wrong)
+
+        {:error, _} ->
+          # Connection might fail, which is acceptable
+          :ok
+      end
+
+      # Clean up
+      File.rm("test_encrypted3.db")
+    end
+  end
 end
