@@ -5,7 +5,7 @@ defmodule Ecto.Integration.EctoLibSqlTest do
   defmodule TestRepo do
     use Ecto.Repo,
       otp_app: :ecto_libsql,
-      adapter: Ecto.Adapters.EctoLibSql
+      adapter: Ecto.Adapters.LibSql
   end
 
   defmodule User do

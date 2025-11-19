@@ -377,6 +377,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ecto_libsql"
+version = "0.4.0"
+dependencies = [
+ "bytes",
+ "lazy_static",
+ "libsql",
+ "once_cell",
+ "rustler",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -965,19 +978,6 @@ dependencies = [
  "tracing",
  "uuid",
  "zerocopy 0.7.35",
-]
-
-[[package]]
-name = "libsqlex"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "lazy_static",
- "libsql",
- "once_cell",
- "rustler",
- "tokio",
- "uuid",
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 defmodule EctoLibSql.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.4.0"
   @source_url "https://github.com/ocean/libsqlex"
 
   def project do
@@ -41,7 +41,7 @@ defmodule EctoLibSql.MixProject do
       {:ecto, "~> 3.11"},
       {:ecto_sql, "~> 3.11"},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
-      {:jason, "~> 1.4", only: [:dev, :test]}
+      {:jason, "~> 1.4"}
     ]
   end
 
@@ -73,8 +73,8 @@ defmodule EctoLibSql.MixProject do
           EctoLibSql.Error
         ],
         "Ecto Integration": [
-          Ecto.Adapters.EctoLibSql,
-          Ecto.Adapters.EctoLibSql.Connection
+          Ecto.Adapters.LibSql,
+          Ecto.Adapters.LibSql.Connection
         ]
       ]
     ]

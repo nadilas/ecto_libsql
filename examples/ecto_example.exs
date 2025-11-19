@@ -1,23 +1,23 @@
-# Example: Using EctoLibSql as an Ecto Adapter
+# Example: Using ecto_libsql as an Ecto Adapter
 #
-# This file demonstrates how to use EctoLibSql with Ecto for schema definition,
-# migrations, and queries.
+# This file demonstrates how to use the LibSQL/Turso Ecto adapter for schema
+# definition, migrations, and queries with both local and remote databases.
 
 # Step 1: Configure your repository in config/config.exs
 
 # config :my_app, MyApp.Repo,
-#   adapter: Ecto.Adapters.EctoLibSql,
+#   adapter: Ecto.Adapters.LibSql,
 #   database: "my_app.db"
 #
 # # Or for remote Turso:
 # config :my_app, MyApp.Repo,
-#   adapter: Ecto.Adapters.EctoLibSql,
+#   adapter: Ecto.Adapters.LibSql,
 #   uri: "libsql://your-database.turso.io",
 #   auth_token: System.get_env("TURSO_AUTH_TOKEN")
 #
 # # Or for remote replica (best of both worlds):
 # config :my_app, MyApp.Repo,
-#   adapter: Ecto.Adapters.EctoLibSql,
+#   adapter: Ecto.Adapters.LibSql,
 #   database: "replica.db",
 #   uri: "libsql://your-database.turso.io",
 #   auth_token: System.get_env("TURSO_AUTH_TOKEN"),
@@ -28,7 +28,7 @@
 defmodule MyApp.Repo do
   use Ecto.Repo,
     otp_app: :my_app,
-    adapter: Ecto.Adapters.EctoLibSql
+    adapter: Ecto.Adapters.LibSql
 end
 
 # Step 3: Define your schemas
@@ -251,15 +251,8 @@ defmodule MyApp.Examples do
     Repo.insert_all(User, users)
   end
 
-  # Stream large result sets
-  def process_all_posts(callback) do
-    Repo.transaction(fn ->
-      Post
-      |> Repo.stream()
-      |> Stream.each(callback)
-      |> Stream.run()
-    end)
-  end
+  # Note: Repo.stream() is not yet supported in the adapter.
+  # For streaming large result sets, use DBConnection cursors directly.
 end
 
 # Step 7: Usage examples
