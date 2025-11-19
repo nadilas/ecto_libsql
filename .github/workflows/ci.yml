@@ -211,8 +211,8 @@ jobs:
     name: Turso Remote Database Tests
     runs-on: ubuntu-latest
     needs: [rust-checks, elixir-tests-latest, elixir-tests-compatibility]
-    # Only run if secrets are available (won't run on forks or without secrets)
-    if: ${{ secrets.TURSO_DB_URI != '' && secrets.TURSO_AUTH_TOKEN != '' }}
+    # Only run on PRs to main when secrets are available
+    if: github.event_name == 'pull_request' && github.base_ref == 'main' && secrets.TURSO_DB_URI != '' && secrets.TURSO_AUTH_TOKEN != ''
 
     steps:
       - name: Checkout code
@@ -252,7 +252,7 @@ jobs:
   all-checks-pass:
     name: All Checks Pass
     runs-on: ubuntu-latest
-    needs: [rust-checks, elixir-tests-latest, elixir-tests-compatibility, integration-test]
+    needs: [rust-checks, elixir-tests-latest, elixir-tests-compatibility, integration-test, turso-remote-tests]
     if: always()
 
     steps:
@@ -271,5 +271,7 @@ jobs:
           if [ "${{ needs.turso-remote-tests.result }}" == "success" ]; then
             echo "Turso remote tests also passed!"
           elif [ "${{ needs.turso-remote-tests.result }}" == "skipped" ]; then
-            echo "Turso remote tests were skipped (credentials not available)"
+            echo "Turso remote tests were skipped (not on PR to main or credentials not available)"
+          elif [ "${{ needs.turso-remote-tests.result }}" == "failure" ]; then
+            echo "WARNING: Turso remote tests failed (but not blocking the build)"
           fi
