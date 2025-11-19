@@ -284,7 +284,9 @@ defmodule EctoLibSql.Native do
       {:ok, _} = EctoLibSql.Native.commit(state)
 
   """
-  def commit(%EctoLibSql.State{conn_id: conn_id, trx_id: trx_id, mode: mode, sync: syncx} = _state) do
+  def commit(
+        %EctoLibSql.State{conn_id: conn_id, trx_id: trx_id, mode: mode, sync: syncx} = _state
+      ) do
     commit_or_rollback_transaction(trx_id, conn_id, mode, syncx, "commit")
   end
 

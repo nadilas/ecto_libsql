@@ -145,7 +145,8 @@ defmodule EctoLibSqlTest do
       statement: "SELECT email FROM users WHERE name = ?1"
     }
 
-    assert {:ok, _, result, _} = EctoLibSql.handle_execute(select_query, ["Alice"], [], final_state)
+    assert {:ok, _, result, _} =
+             EctoLibSql.handle_execute(select_query, ["Alice"], [], final_state)
 
     assert result.rows == [["alice@new.com"]]
   end
@@ -929,7 +930,7 @@ defmodule EctoLibSqlTest do
 
       # The secret text should NOT appear in plaintext in the file
       refute String.contains?(raw_content, secret_text),
-        "Secret text '#{secret_text}' found in plaintext in encrypted database file!"
+             "Secret text '#{secret_text}' found in plaintext in encrypted database file!"
 
       # Also check that the file doesn't start with SQLite header (sign of unencrypted SQLite)
       # Encrypted databases should have different file structure
@@ -937,7 +938,7 @@ defmodule EctoLibSqlTest do
 
       # Standard SQLite header is "SQLite format 3\0"
       refute String.starts_with?(first_bytes, "SQLite format 3"),
-        "Database file has standard SQLite header - may not be encrypted!"
+             "Database file has standard SQLite header - may not be encrypted!"
 
       # Verify we can still read with correct key
       {:ok, state2} =
