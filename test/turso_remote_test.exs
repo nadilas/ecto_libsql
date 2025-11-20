@@ -48,8 +48,10 @@ defmodule TursoRemoteTest do
     # Manually trigger sync
     case EctoLibSql.Native.sync(state) do
       :ok -> :ok
-      {:ok, _} -> :ok  # Some versions return {:ok, message}
-      {:error, _} -> :ok  # Ignore sync errors, will retry
+      # Some versions return {:ok, message}
+      {:ok, _} -> :ok
+      # Ignore sync errors, will retry
+      {:error, _} -> :ok
     end
 
     # Poll to verify table exists
@@ -58,11 +60,11 @@ defmodule TursoRemoteTest do
 
   defp wait_for_table(state, table_name, attempts_left, interval_ms) when attempts_left > 0 do
     case EctoLibSql.handle_execute(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-      [table_name],
-      [],
-      state
-    ) do
+           "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+           [table_name],
+           [],
+           state
+         ) do
       {:ok, _, %{rows: [[^table_name]]}, _} ->
         # Table exists, sync complete
         :ok
@@ -432,6 +434,7 @@ defmodule TursoRemoteTest do
 
       IO.puts("\n[VECTOR DEBUG] Query: #{inspect(query_vector)}")
       IO.puts("[VECTOR DEBUG] Results with distances:")
+
       Enum.each(debug_result.rows, fn row ->
         IO.puts("  #{inspect(row)}")
       end)
@@ -446,6 +449,7 @@ defmodule TursoRemoteTest do
 
       # Should return 2 closest items
       assert result.num_rows == 2
+
       # First result should be Item A (closest to query [1.5, 2.1, 2.9] which is similar to [1, 2, 3])
       [[1, "Item A"], _second] = result.rows
 
@@ -921,7 +925,8 @@ defmodule TursoRemoteTest do
         )
 
       # Manually sync before disconnect to ensure data is pushed
-      _ = EctoLibSql.Native.sync(replica1)  # Returns {:ok, "success sync"}
+      # Returns {:ok, "success sync"}
+      _ = EctoLibSql.Native.sync(replica1)
       EctoLibSql.disconnect([], replica1)
 
       # Give remote time to receive the sync
@@ -978,21 +983,22 @@ defmodule TursoRemoteTest do
       # Wait for sync to pull down data from remote
       # We need to verify the data exists, not just that the table exists
       # Try multiple times to give sync time to complete
-      result2 = Enum.reduce_while(1..10, nil, fn _attempt, _acc ->
-        case EctoLibSql.handle_execute(
-          "SELECT source FROM #{table} WHERE id = ?",
-          [2],
-          [],
-          replica1_again
-        ) do
-          {:ok, _, %{rows: [["replica_2"]]} = result, _} ->
-            {:halt, result}
+      result2 =
+        Enum.reduce_while(1..10, nil, fn _attempt, _acc ->
+          case EctoLibSql.handle_execute(
+                 "SELECT source FROM #{table} WHERE id = ?",
+                 [2],
+                 [],
+                 replica1_again
+               ) do
+            {:ok, _, %{rows: [["replica_2"]]} = result, _} ->
+              {:halt, result}
 
-          _ ->
-            Process.sleep(500)
-            {:cont, nil}
-        end
-      end)
+            _ ->
+              Process.sleep(500)
+              {:cont, nil}
+          end
+        end)
 
       assert result2 != nil, "Failed to sync data from replica_2"
       assert result2.rows == [["replica_2"]]
