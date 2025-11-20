@@ -38,7 +38,7 @@ config :my_app, MyApp.Repo,
   # database: "my_app_dev",
 
   # New LibSqlEx config:
-  adapter: Ecto.Adapters.LibSqlEx,
+  adapter: Ecto.Adapters.LibSql,
   database: "my_app_dev.db"
 ```
 
@@ -50,7 +50,7 @@ The repo module itself doesn't need changes:
 defmodule MyApp.Repo do
   use Ecto.Repo,
     otp_app: :my_app,
-    adapter: Ecto.Adapters.LibSqlEx  # Just update this line
+    adapter: Ecto.Adapters.LibSql  # Just update this line
 end
 ```
 
@@ -257,7 +257,7 @@ For production, use Turso's remote replica mode for best performance:
 ```elixir
 # config/prod.exs
 config :my_app, MyApp.Repo,
-  adapter: Ecto.Adapters.LibSqlEx,
+  adapter: Ecto.Adapters.LibSql,
   database: "prod_replica.db",
   uri: System.get_env("TURSO_URL"),
   auth_token: System.get_env("TURSO_AUTH_TOKEN"),
@@ -332,7 +332,7 @@ Update your test configuration:
 ```elixir
 # config/test.exs
 config :my_app, MyApp.Repo,
-  adapter: Ecto.Adapters.LibSqlEx,
+  adapter: Ecto.Adapters.LibSql,
   database: "my_app_test.db",
   pool: Ecto.Adapters.SQL.Sandbox
 ```

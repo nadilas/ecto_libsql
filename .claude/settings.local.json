@@ -8,7 +8,11 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(mix clean:*)",
-      "Bash(iex -S mix:*)"
+      "Bash(iex -S mix:*)",
+      "Bash(mix deps.get:*)",
+      "Bash(cargo fmt:*)",
+      "WebFetch(domain:docs.github.com)",
+      "Bash(yamllint:*)"
     ],
     "deny": [],
     "ask": []

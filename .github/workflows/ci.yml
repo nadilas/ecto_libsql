@@ -38,21 +38,21 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            native/libsqlex/target/
+            native/ecto_libsql/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
       - name: Check Rust formatting
-        run: cargo fmt --check --manifest-path native/libsqlex/Cargo.toml
+        run: cargo fmt --check --manifest-path native/ecto_libsql/Cargo.toml
 
       - name: Run Clippy
-        run: cargo clippy --manifest-path native/libsqlex/Cargo.toml --all-targets --all-features
+        run: cargo clippy --manifest-path native/ecto_libsql/Cargo.toml --all-targets --all-features
         # Note: Currently not treating warnings as errors due to await_holding_lock warnings
         # These should be addressed in a future PR by using async-aware Mutex types
 
       - name: Run Rust tests
-        run: cargo test --manifest-path native/libsqlex/Cargo.toml --all-features
+        run: cargo test --manifest-path native/ecto_libsql/Cargo.toml --all-features
 
   elixir-tests-latest:
     name: Elixir 1.18.0 / OTP 27.0 / ${{ matrix.os }}
@@ -79,7 +79,7 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            native/libsqlex/target/
+            native/ecto_libsql/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
@@ -96,7 +96,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-1.18.0-27.0-${{ hashFiles('**/mix.lock') }}
+          key: ${{ runner.os }}-mix-1.18.0-27.0-${{ hashFiles('**/mix.lock', '**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-1.18.0-27.0-
 
@@ -140,7 +140,7 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            native/libsqlex/target/
+            native/ecto_libsql/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
@@ -157,7 +157,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
+          key: ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock', '**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-
 
@@ -188,15 +188,33 @@ jobs:
           elixir-version: '1.18.0'
           otp-version: '27.0'
 
-      - name: Cache dependencies
+      - name: Cache Mix dependencies
         uses: actions/cache@v4
         with:
           path: |
             deps
             _build
-            ~/.cargo
-            native/libsqlex/target/
-          key: ${{ runner.os }}-integration-${{ hashFiles('**/mix.lock', '**/Cargo.lock') }}
+          key: ${{ runner.os }}-integration-mix-${{ hashFiles('**/mix.lock', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-integration-mix-
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            native/ecto_libsql/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Verify Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
 
       - name: Install dependencies
         run: mix deps.get
@@ -204,13 +222,98 @@ jobs:
       - name: Compile project
         run: mix compile
 
-      - name: Run full test suite
-        run: mix test --trace
+      - name: Verify NIF library exists
+        run: |
+          if [ ! -f "_build/test/lib/ecto_libsql/priv/native/libecto_libsql.so" ]; then
+            echo "ERROR: NIF library not found after compilation!"
+            echo "Looking for compiled artifacts:"
+            find _build -name "libecto_libsql.so" -o -name "*.so" | head -20
+            find native/ecto_libsql/target -name "libecto_libsql.so" -o -name "*.so" | head -20
+            exit 1
+          fi
+          echo "NIF library found successfully"
+
+      - name: Run full test suite (excluding Turso remote tests)
+        run: mix test --trace --exclude turso_remote
+
+  turso-remote-tests:
+    name: Turso Remote Database Tests
+    runs-on: ubuntu-latest
+    needs: [rust-checks, elixir-tests-latest, elixir-tests-compatibility]
+    # Only run on PRs to main
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    env:
+      TURSO_DB_URI: ${{ secrets.TURSO_DB_URI }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+
+    steps:
+      - name: Check if secrets are available
+        id: check-secrets
+        run: |
+          if [ -z "$TURSO_DB_URI" ] || [ -z "$TURSO_AUTH_TOKEN" ]; then
+            echo "Secrets not available, skipping tests"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "Secrets available, running tests"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout code
+        if: steps.check-secrets.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        if: steps.check-secrets.outputs.skip != 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Elixir
+        if: steps.check-secrets.outputs.skip != 'true'
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18.0'
+          otp-version: '27.0'
+
+      - name: Cache Mix dependencies
+        if: steps.check-secrets.outputs.skip != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-turso-mix-${{ hashFiles('**/mix.lock', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-turso-mix-
+
+      - name: Cache Rust dependencies
+        if: steps.check-secrets.outputs.skip != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            native/ecto_libsql/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install dependencies
+        if: steps.check-secrets.outputs.skip != 'true'
+        run: mix deps.get
+
+      - name: Compile project
+        if: steps.check-secrets.outputs.skip != 'true'
+        run: mix compile
+
+      - name: Run Turso remote tests
+        if: steps.check-secrets.outputs.skip != 'true'
+        run: mix test test/turso_remote_test.exs --trace
 
   all-checks-pass:
     name: All Checks Pass
     runs-on: ubuntu-latest
-    needs: [rust-checks, elixir-tests-latest, elixir-tests-compatibility, integration-test]
+    needs: [rust-checks, elixir-tests-latest, elixir-tests-compatibility, integration-test, turso-remote-tests]
     if: always()
 
     steps:
@@ -224,3 +327,12 @@ jobs:
             exit 1
           fi
           echo "All checks passed successfully!"
+
+          # Note: Turso remote tests are optional and don't block the build
+          if [ "${{ needs.turso-remote-tests.result }}" == "success" ]; then
+            echo "Turso remote tests also passed!"
+          elif [ "${{ needs.turso-remote-tests.result }}" == "skipped" ]; then
+            echo "Turso remote tests were skipped (not on PR to main or credentials not available)"
+          elif [ "${{ needs.turso-remote-tests.result }}" == "failure" ]; then
+            echo "WARNING: Turso remote tests failed (but not blocking the build)"
+          fi

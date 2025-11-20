@@ -17,7 +17,7 @@ erl_crash.dump
 *.ez
 
 # Ignore package tarball (built via "mix hex.build").
-libsqlex-*.tar
+ecto_libsql-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
@@ -25,8 +25,15 @@ libsqlex-*.tar
 # Rust binary artifacts
 /target/
 
+# Compiled native libraries (architecture-specific)
+/priv/native/*.so
+/priv/native/*.dll
+/priv/native/*.dylib
 
+# Test databases
 bar.db
 bar.db-info
 bar.db-shm
 bar.db-wal
+test_encrypted*.db
+test_encrypted*.db-*

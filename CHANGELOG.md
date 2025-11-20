@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-11-19
+
+### Changed
+
+- **Library Renamed from LibSqlEx to EctoLibSql**
+  - Package name changed from `:libsqlex` to `:ecto_libsql`
+  - Main module renamed from `LibSqlEx` to `EctoLibSql`
+  - Adapter module renamed from `Ecto.Adapters.LibSqlEx` to `Ecto.Adapters.LibSql`
+  - Connection module renamed from `Ecto.Adapters.LibSqlEx.Connection` to `Ecto.Adapters.LibSql.Connection`
+  - Native module renamed from `LibSqlEx.Native` to `EctoLibSql.Native`
+  - All supporting modules updated (Query, Result, State, Error)
+  - Rust crate renamed from `libsqlex` to `ecto_libsql`
+
+### Migration Guide
+
+To upgrade from 0.3.0 to 0.4.0, update your dependencies and module references:
+
+```elixir
+# mix.exs - Update dependency
+def deps do
+  [
+    # Old: {:libsqlex, "~> 0.3.0"}
+    {:ecto_libsql, "~> 0.4.0"}
+  ]
+end
+
+# config/config.exs - Update adapter reference
+config :my_app, MyApp.Repo,
+  # Old: adapter: Ecto.Adapters.LibSqlEx
+  adapter: Ecto.Adapters.LibSql
+
+# Code - Update module references
+# Old: alias LibSqlEx.{Query, Result}
+alias EctoLibSql.{Query, Result}
+
+# Old: LibSqlEx.Native.vector_type(128, :f32)
+EctoLibSql.Native.vector_type(128, :f32)
+```
+
+All functionality remains identical; only names have changed.
+
 ## [0.3.0] - 2025-11-17
 
 ### Added

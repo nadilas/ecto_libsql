@@ -126,7 +126,7 @@ mix test --cover                       # Generate coverage report
 
 #### 1. `test/ecto_adapter_test.exs`
 
-Tests the Ecto.Adapters.LibSqlEx adapter implementation.
+Tests the Ecto.Adapters.LibSql adapter implementation.
 
 **Coverage:**
 - `storage_up/1` - Database creation
@@ -146,7 +146,7 @@ end
 
 #### 2. `test/ecto_connection_test.exs`
 
-Tests Ecto.Adapters.LibSqlEx.Connection for SQL generation and DDL operations.
+Tests Ecto.Adapters.LibSql.Connection for SQL generation and DDL operations.
 
 **Coverage:**
 - DDL generation (CREATE/DROP TABLE, ALTER TABLE)
@@ -300,7 +300,7 @@ jobs:
    - Tested manually or in CI with secrets
 
 2. **Concurrent Access:**
-   - SQLite locking behavior
+   - SQLite locking behaviour
    - Tested in production-like scenarios
 
 3. **Performance Testing:**
