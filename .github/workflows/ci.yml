@@ -198,11 +198,27 @@ jobs:
             native/ecto_libsql/target/
           key: ${{ runner.os }}-integration-${{ hashFiles('**/mix.lock', '**/Cargo.lock') }}
 
+      - name: Verify Rust toolchain
+        run: |
+          rustc --version
+          cargo --version
+
       - name: Install dependencies
         run: mix deps.get
 
       - name: Compile project
         run: mix compile
+
+      - name: Verify NIF library exists
+        run: |
+          if [ ! -f "_build/test/lib/ecto_libsql/priv/native/libecto_libsql.so" ]; then
+            echo "ERROR: NIF library not found after compilation!"
+            echo "Looking for compiled artifacts:"
+            find _build -name "libecto_libsql.so" -o -name "*.so" | head -20
+            find native/ecto_libsql/target -name "libecto_libsql.so" -o -name "*.so" | head -20
+            exit 1
+          fi
+          echo "NIF library found successfully"
 
       - name: Run full test suite (excluding Turso remote tests)
         run: mix test --trace --exclude turso_remote
