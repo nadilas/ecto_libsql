@@ -51,8 +51,7 @@ defmodule EctoLibSql.MixProject do
       files: ~w(lib priv .formatter.exs mix.exs README* LICENSE* CHANGELOG* AGENT* native),
       licenses: ["Apache-2.0"],
       links: %{
-        "GitHub" => @source_url,
-        "Original Fork" => "https://github.com/danawanb/libsqlex"
+        "GitHub" => @source_url
       },
       maintainers: ["ocean"]
     ]
