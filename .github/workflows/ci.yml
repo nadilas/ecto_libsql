@@ -229,7 +229,7 @@ jobs:
 
       - name: Verify NIF library exists
         run: |
-          if [ ! -f "_build/test/lib/ecto_libsql/native/ecto_libsql/release/libecto_libsql.so" ]; then
+          if [ ! -f "target/release/libecto_libsql.so" ]; then
             echo "ERROR: NIF library not found after compilation!"
             echo "Looking for compiled artifacts:"
             find . -name "libecto_libsql.so" -o -name "*.so" | head -20
