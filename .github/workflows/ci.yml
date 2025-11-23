@@ -37,7 +37,7 @@ jobs:
         run: |
           ls -la
           cd native
-          tree
+          ls -la
 
       - name: Cache Rust dependencies
         uses: actions/cache@v4
