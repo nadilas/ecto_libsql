@@ -33,6 +33,12 @@ jobs:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
 
+      - name: Display files
+        run: |
+          ls -la
+          cd native
+          tree
+
       - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
