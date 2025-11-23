@@ -41,8 +41,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            native/ecto_libsql/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('native/ecto_libsql/Cargo.toml') }}
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.toml', 'native/ecto_libsql/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -88,7 +88,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('mix.exs', 'native/ecto_libsql/Cargo.toml') }}
+          key: ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('mix.exs', 'Cargo.toml', 'native/ecto_libsql/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-
 
@@ -139,7 +139,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('mix.exs', 'native/ecto_libsql/Cargo.toml') }}
+          key: ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('mix.exs', 'Cargo.toml', 'native/ecto_libsql/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-
 
@@ -179,7 +179,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-integration-mix-${{ hashFiles('mix.exs', 'native/ecto_libsql/Cargo.toml') }}
+          key: ${{ runner.os }}-integration-mix-${{ hashFiles('mix.exs', 'Cargo.toml', 'native/ecto_libsql/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-integration-mix-
 
@@ -191,8 +191,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            native/ecto_libsql/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('native/ecto_libsql/Cargo.toml') }}
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.toml', 'native/ecto_libsql/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
@@ -275,7 +275,7 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-turso-mix-${{ hashFiles('mix.exs', 'native/ecto_libsql/Cargo.toml') }}
+          key: ${{ runner.os }}-turso-mix-${{ hashFiles('mix.exs', 'Cargo.toml', 'native/ecto_libsql/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-turso-mix-
 
@@ -288,8 +288,8 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            native/ecto_libsql/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('native/ecto_libsql/Cargo.toml') }}
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.toml', 'native/ecto_libsql/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
