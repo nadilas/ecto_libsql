@@ -111,6 +111,9 @@ jobs:
       - name: Check Elixir formatting
         run: mix format --check-formatted
 
+      - name: Build Rust NIF library
+        run: cargo build --release --manifest-path native/ecto_libsql/Cargo.toml
+
       - name: Compile (warnings as errors)
         run: mix compile --warnings-as-errors
 
@@ -168,6 +171,9 @@ jobs:
 
       - name: Install Mix dependencies
         run: mix deps.get
+
+      - name: Build Rust NIF library
+        run: cargo build --release --manifest-path native/ecto_libsql/Cargo.toml
 
       - name: Compile (warnings as errors)
         run: mix compile --warnings-as-errors
