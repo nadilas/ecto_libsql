@@ -39,6 +39,9 @@ jobs:
           cd native
           ls -la
 
+      - name: Debug Cargo.toml files
+        run: find . -name Cargo.toml -print
+
       - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
