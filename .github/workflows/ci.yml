@@ -101,6 +101,9 @@ jobs:
       - name: Compile (warnings as errors)
         run: mix compile --warnings-as-errors
 
+      - name: Debug .so files
+        run: find . -name '*.so' -print
+
       - name: Run Elixir tests
         run: mix test
 
