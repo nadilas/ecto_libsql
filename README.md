@@ -1,5 +1,7 @@
 # EctoLibSql
 
+[![GitHub Actions CI](https://github.com/ocean/ecto_libsql/actions/workflows/ci.yml/badge.svg)](https://github.com/ocean/ecto_libsql/actions/workflows/ci.yml)
+
 `ecto_libsql` is an (unofficial) Elixir Ecto database adapter for LibSQL and Turso, built with Rust NIFs. It supports local SQLite files, remote replica with synchronisation, and remote only [Turso](https://turso.tech/) databases.
 
 ## Installation
@@ -91,6 +93,13 @@ For lower-level control, you can use the DBConnection interface directly:
 - Cursor-based streaming for large result sets (via DBConnection interface)
 
 **Note:** Ecto `Repo.stream()` is not yet implemented. For streaming large datasets, use the DBConnection cursor interface directly (see examples in AGENT.md).
+
+## Documentation
+
+- **API Documentation**: [https://hexdocs.pm/ecto_libsql](https://hexdocs.pm/ecto_libsql)
+- **LLM / AGENT Guide**: [AGENT.md](AGENT.md)
+- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
+- **Migration Guide**: [ECTO_MIGRATION_GUIDE.md](ECTO_MIGRATION_GUIDE.md)
 
 ## Usage Examples
 
@@ -442,12 +451,6 @@ total = EctoLibSql.Native.get_total_changes(state)
 # Check if in autocommit mode (not in transaction)
 autocommit? = EctoLibSql.Native.get_is_autocommit(state)
 ```
-
-## Documentation
-
-- **API Documentation**: [https://hexdocs.pm/ecto_libsql](https://hexdocs.pm/ecto_libsql)
-- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
-- **Migration Guide**: [ECTO_MIGRATION_GUIDE.md](ECTO_MIGRATION_GUIDE.md)
 
 ## License
 

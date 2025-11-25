@@ -28,7 +28,7 @@ defmodule EctoLibSql.MixProject do
 
   defp description() do
     """
-    Ecto adapter for LibSQL and Turso databases. Supports local SQLite files,
+    Elixir Ecto adapter for LibSQL and Turso databases. Supports local SQLite files,
     remote Turso cloud databases, and embedded replicas with sync. Built with
     Rust NIFs for high performance.
     """
