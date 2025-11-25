@@ -99,7 +99,7 @@ jobs:
         run: mix format --check-formatted
 
       - name: Compile (warnings as errors)
-        run: mix compile --warnings-as-errors
+        run: mix compile --force --warnings-as-errors
 
       - name: Debug .so files
         run: find . -name '*.so' -print
@@ -147,7 +147,7 @@ jobs:
         run: mix deps.get
 
       - name: Compile (warnings as errors)
-        run: mix compile --warnings-as-errors
+        run: mix compile --force --warnings-as-errors
 
       - name: Run Elixir tests
         run: mix test
@@ -204,8 +204,7 @@ jobs:
       - name: Compile project
         run: |
           echo "Compiling with MIX_ENV=$MIX_ENV"
-          mix compile --force --verbose
-          echo "Compilation finished"
+          mix compile --force
 
       - name: Verify NIF library exists
         run: |
@@ -296,7 +295,7 @@ jobs:
 
       - name: Compile project
         if: steps.check-secrets.outputs.skip != 'true'
-        run: mix compile
+        run: mix compile --force
 
       - name: Run Turso remote tests
         if: steps.check-secrets.outputs.skip != 'true'
