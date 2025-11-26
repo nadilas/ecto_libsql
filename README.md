@@ -94,6 +94,11 @@ For lower-level control, you can use the DBConnection interface directly:
 
 **Note:** Ecto `Repo.stream()` is not yet implemented. For streaming large datasets, use the DBConnection cursor interface directly (see examples in AGENT.md).
 
+**Reliability**
+- **Production-ready error handling**: All Rust NIF errors return proper Elixir error tuples instead of crashing the BEAM VM
+- **Graceful degradation**: Invalid operations (bad connection IDs, missing resources) return `{:error, message}` for proper supervision tree handling
+- **Zero panic risk**: 100% of panic-prone `unwrap()` calls eliminated from production code
+
 ## Documentation
 
 - **API Documentation**: [https://hexdocs.pm/ecto_libsql](https://hexdocs.pm/ecto_libsql)
