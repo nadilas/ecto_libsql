@@ -26,6 +26,7 @@ Welcome to ecto_libsql! This guide provides comprehensive documentation, API ref
 - [API Reference](#api-reference)
 - [Real-World Examples](#real-world-examples)
 - [Performance Guide](#performance-guide)
+- [Error Handling](#error-handling)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -2252,6 +2253,283 @@ defmodule MyApp.Schema do
   end
 end
 ```
+
+---
+
+## Error Handling
+
+### Overview
+
+The `ecto_libsql` library uses a Rust NIF (Native Implemented Function) for its core operations. As of version 0.4.0, all error handling has been comprehensively refactored to ensure that errors are returned gracefully to Elixir rather than panicking and crashing the BEAM VM.
+
+**Key principle:** All NIF operations that can fail now return `{:error, message}` tuples to Elixir, allowing your application's supervision tree to handle failures properly.
+
+### Error Categories
+
+#### 1. Connection Errors
+
+**Invalid Connection ID:**
+```elixir
+# When using a stale or non-existent connection ID
+result = EctoLibSql.Native.ping("invalid-connection-id")
+# Returns: {:error, "Invalid connection ID"}
+
+# Your code can handle it:
+case EctoLibSql.Native.ping(conn_id) do
+  {:ok, _} -> :connected
+  {:error, msg} -> 
+    Logger.error("Connection failed: #{msg}")
+    :reconnect
+end
+```
+
+**Connection Not Found:**
+```elixir
+# Attempting to query with closed/invalid connection
+result = EctoLibSql.Native.query_args(
+  closed_conn_id,
+  :local,
+  :disable_sync,
+  "SELECT 1",
+  []
+)
+# Returns: {:error, "Invalid connection ID"}
+```
+
+#### 2. Transaction Errors
+
+**Transaction Not Found:**
+```elixir
+# Using invalid transaction ID
+result = EctoLibSql.Native.execute_with_transaction(
+  "invalid-trx-id",
+  "INSERT INTO users VALUES (?)",
+  ["Alice"]
+)
+# Returns: {:error, "Transaction not found"}
+
+# Proper error handling:
+case EctoLibSql.Native.execute_with_transaction(trx_id, sql, params) do
+  {:ok, rows} -> {:ok, rows}
+  {:error, "Transaction not found"} -> 
+    # Transaction may have been rolled back or timed out
+    {:error, :transaction_expired}
+  {:error, msg} -> 
+    {:error, msg}
+end
+```
+
+#### 3. Resource Errors
+
+**Statement Not Found:**
+```elixir
+# Using invalid prepared statement ID
+result = EctoLibSql.Native.query_prepared(
+  conn_id,
+  "invalid-stmt-id",
+  :local,
+  :disable_sync,
+  []
+)
+# Returns: {:error, "Statement not found"}
+```
+
+**Cursor Not Found:**
+```elixir
+# Using invalid cursor ID
+result = EctoLibSql.Native.fetch_cursor("invalid-cursor-id", 100)
+# Returns: {:error, "Cursor not found"}
+```
+
+#### 4. Mutex and Concurrency Errors
+
+The library uses mutex locks internally to manage shared state. If a mutex becomes poisoned (due to a panic in another thread), you'll receive a descriptive error:
+
+```elixir
+# Example of mutex poisoning error (rare, but handled gracefully)
+{:error, "Mutex poisoned in query_args client: poisoned lock: another task failed inside"}
+```
+
+These errors indicate an internal issue but won't crash your VM. Log them and consider restarting the connection.
+
+### Error Handling Patterns
+
+#### Pattern 1: Simple Case Match
+
+```elixir
+case EctoLibSql.handle_execute(sql, params, [], state) do
+  {:ok, query, result, new_state} ->
+    # Process result
+    process_result(result)
+    
+  {:error, query, reason, new_state} ->
+    Logger.error("Query failed: #{inspect(reason)}")
+    {:error, :query_failed}
+end
+```
+
+#### Pattern 2: With Clause
+
+```elixir
+with {:ok, state} <- EctoLibSql.connect(opts),
+     {:ok, _, _, state} <- create_table(state),
+     {:ok, _, _, state} <- insert_data(state) do
+  {:ok, state}
+else
+  {:error, reason} ->
+    Logger.error("Database setup failed: #{inspect(reason)}")
+    {:error, :setup_failed}
+end
+```
+
+#### Pattern 3: Supervision Tree Integration
+
+```elixir
+defmodule MyApp.DatabaseWorker do
+  use GenServer
+  require Logger
+
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  def init(opts) do
+    case EctoLibSql.connect(opts) do
+      {:ok, state} ->
+        {:ok, state}
+        
+      {:error, reason} ->
+        Logger.error("Failed to connect: #{inspect(reason)}")
+        # Supervisor will restart us
+        {:stop, :connection_failed}
+    end
+  end
+
+  def handle_call({:query, sql, params}, _from, state) do
+    case EctoLibSql.handle_execute(sql, params, [], state) do
+      {:ok, _query, result, new_state} ->
+        {:reply, {:ok, result}, new_state}
+        
+      {:error, _query, reason, new_state} ->
+        # Error is contained to this process
+        # Supervisor can restart if needed
+        {:reply, {:error, reason}, new_state}
+    end
+  end
+end
+```
+
+#### Pattern 4: Retry Logic
+
+```elixir
+defmodule MyApp.Database do
+  def query_with_retry(state, sql, params, retries \\ 3) do
+    case EctoLibSql.handle_execute(sql, params, [], state) do
+      {:ok, query, result, new_state} ->
+        {:ok, result, new_state}
+        
+      {:error, _query, reason, new_state} when retries > 0 ->
+        Logger.warn("Query failed (#{retries} retries left): #{inspect(reason)}")
+        Process.sleep(100)
+        query_with_retry(new_state, sql, params, retries - 1)
+        
+      {:error, _query, reason, new_state} ->
+        Logger.error("Query failed after retries: #{inspect(reason)}")
+        {:error, reason, new_state}
+    end
+  end
+end
+```
+
+### What Changed (Technical Details)
+
+Prior to version 0.4.0, the Rust NIF code contained 146 `unwrap()` calls that could panic and crash the entire BEAM VM. These have been completely eliminated:
+
+**Before (would crash VM):**
+```rust
+let conn_map = CONNECTION_REGISTRY.lock().unwrap();
+let client = conn_map.get(conn_id).unwrap();  // Panic on None
+```
+
+**After (returns error to Elixir):**
+```rust
+let conn_map = safe_lock(&CONNECTION_REGISTRY, "context")?;
+let client = conn_map.get(conn_id)
+    .ok_or_else(|| rustler::Error::Term(Box::new("Connection not found")))?;
+```
+
+### Testing Error Handling
+
+The library includes comprehensive error handling tests:
+
+```bash
+# Run error handling demonstration tests
+mix test test/error_demo_test.exs test/error_handling_test.exs
+
+# All tests (includes error handling tests)
+mix test
+```
+
+These tests verify that all error conditions return proper error tuples and don't crash the VM.
+
+### Best Practices
+
+1. **Always pattern match on results:**
+   ```elixir
+   # Good
+   case result do
+     {:ok, data} -> handle_success(data)
+     {:error, reason} -> handle_error(reason)
+   end
+   
+   # Avoid - will crash if error
+   {:ok, data} = result
+   ```
+
+2. **Use supervision trees:**
+   ```elixir
+   # Let processes crash, supervisor will restart
+   def handle_cast(:do_query, state) do
+     {:ok, result} = query!(state)  # Can crash this process
+     {:noreply, update_state(result)}
+   end
+   ```
+
+3. **Log errors with context:**
+   ```elixir
+   {:error, reason} = result
+   Logger.error("Database operation failed", 
+     error: reason,
+     sql: sql,
+     params: params
+   )
+   ```
+
+4. **Consider circuit breakers for remote connections:**
+   ```elixir
+   # Use libraries like :fuse for circuit breaker pattern
+   case :fuse.ask(:database_circuit, :sync) do
+     :ok -> 
+       case query(sql, params) do
+         {:ok, result} -> {:ok, result}
+         {:error, reason} -> 
+           :fuse.melt(:database_circuit)
+           {:error, reason}
+       end
+     :blown ->
+       {:error, :circuit_breaker_open}
+   end
+   ```
+
+### Performance Impact
+
+The error handling improvements have **no performance impact** on the happy path. Error handling overhead is only incurred when actual errors occur, where it's negligible compared to the error handling time itself.
+
+### Further Reading
+
+- [Error Handling Demo Tests](test/error_demo_test.exs) - See concrete examples
+- [Changes Summary](CHANGES_SUMMARY.md) - Technical details of the refactoring
+- [Elixir Error Handling](https://hexdocs.pm/elixir/try-catch-and-rescue.html) - Official Elixir guide
 
 ---
 
