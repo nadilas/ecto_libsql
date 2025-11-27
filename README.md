@@ -2,7 +2,7 @@
 
 [![GitHub Actions CI](https://github.com/ocean/ecto_libsql/actions/workflows/ci.yml/badge.svg)](https://github.com/ocean/ecto_libsql/actions/workflows/ci.yml)
 
-`ecto_libsql` is an (unofficial) Elixir Ecto database adapter for LibSQL and Turso, built with Rust NIFs. It supports local SQLite files, remote replica with synchronisation, and remote only [Turso](https://turso.tech/) databases.
+`ecto_libsql` is an (unofficial) Elixir Ecto database adapter for LibSQL and Turso, built with Rust NIFs. It supports local libSQL/SQLite files, remote replica with synchronisation, and remote only [Turso](https://turso.tech/) databases.
 
 ## Installation
 
