@@ -94,7 +94,11 @@ defmodule EctoLibSql.Native do
   def query_prepared(_conn, _stmt_id, _mode, _sync, _args), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def execute_prepared(_conn, _stmt_id, _mode, _sync, _args, _sql_hint),
+  def execute_prepared(_conn, _stmt_id, _mode, _sync, _sql_hint, _args),
+    do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
+  def declare_cursor_with_context(_id, _id_type, _sql, _args),
     do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
@@ -401,7 +405,7 @@ defmodule EctoLibSql.Native do
         sql,
         args
       ) do
-    case execute_prepared(conn_id, stmt_id, mode, syncx, args, sql) do
+    case execute_prepared(conn_id, stmt_id, mode, syncx, sql, args) do
       num_rows when is_integer(num_rows) ->
         {:ok, num_rows}
 

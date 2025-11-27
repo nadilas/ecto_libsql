@@ -446,7 +446,6 @@ defmodule Ecto.Integration.EctoLibSqlTest do
   end
 
   describe "streaming" do
-    @tag :skip
     test "stream large result sets" do
       # Insert many records
       users_data =

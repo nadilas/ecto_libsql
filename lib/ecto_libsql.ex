@@ -236,9 +236,8 @@ defmodule EctoLibSql do
         }
 
         if length(rows) == 0 do
-          # No more rows, deallocate cursor
-          :ok = EctoLibSql.Native.close(cursor.ref, :cursor_id)
-          {:deallocated, result, state}
+          # No more rows, signal halt
+          {:halt, result, state}
         else
           {:cont, result, state}
         end
@@ -274,9 +273,13 @@ defmodule EctoLibSql do
         %EctoLibSql.Query{statement: statement} = query,
         params,
         _opts,
-        %EctoLibSql.State{conn_id: conn_id} = state
+        %EctoLibSql.State{conn_id: conn_id, trx_id: trx_id} = state
       ) do
-    case EctoLibSql.Native.declare_cursor(conn_id, statement, params) do
+    # Use transaction ID if in a transaction, otherwise use connection ID
+    id = trx_id || conn_id
+    id_type = if trx_id, do: :transaction, else: :connection
+
+    case EctoLibSql.Native.declare_cursor_with_context(id, id_type, statement, params) do
       cursor_id when is_binary(cursor_id) ->
         cursor = %{ref: cursor_id}
         {:ok, query, cursor, state}
