@@ -120,10 +120,7 @@ defmodule EctoLibSql.ErrorHandlingTest do
       assert error_msg =~ "Statement not found" or error_msg =~ "Invalid"
     end
 
-    @tag :skip
     test "execute with non-existent prepared statement returns error (not panic)" do
-      # This test currently triggers a panic in execute_prepared due to an edge case
-      # with argument handling. Skipping until that's fixed.
       fake_conn_id = "fake-conn"
       fake_stmt_id = "invalid-stmt"
 
@@ -133,8 +130,8 @@ defmodule EctoLibSql.ErrorHandlingTest do
           fake_stmt_id,
           :local,
           :disable_sync,
-          [],
-          "INSERT INTO test VALUES (1)"
+          "INSERT INTO test VALUES (1)",
+          []
         )
 
       assert {:error, error_msg} = result

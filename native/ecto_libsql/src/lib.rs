@@ -74,7 +74,9 @@ atoms! {
     deferred,
     immediate,
     exclusive,
-    read_only
+    read_only,
+    transaction,
+    connection
 }
 
 enum Mode {
@@ -935,8 +937,8 @@ fn execute_prepared<'a>(
     stmt_id: &str,
     mode: Atom,
     syncx: Atom,
-    args: Vec<Term<'a>>,
     sql_hint: &str, // For detecting if we need sync
+    args: Vec<Term<'a>>,
 ) -> NifResult<u64> {
     let conn_map = safe_lock(&CONNECTION_REGISTRY, "execute_prepared conn_map")?;
     let stmt_registry = safe_lock(&STMT_REGISTRY, "execute_prepared stmt_registry")?;
@@ -1146,6 +1148,123 @@ fn declare_cursor(conn_id: &str, sql: &str, args: Vec<Term>) -> NifResult<String
     } else {
         Err(rustler::Error::Term(Box::new("Invalid connection ID")))
     }
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn declare_cursor_with_context(
+    id: &str,
+    id_type: Atom,
+    sql: &str,
+    args: Vec<Term>,
+) -> NifResult<String> {
+    let decoded_args: Vec<Value> = args
+        .into_iter()
+        .map(|t| decode_term_to_value(t))
+        .collect::<Result<_, _>>()
+        .map_err(|e| rustler::Error::Term(Box::new(e)))?;
+
+    let (columns, rows) = if id_type == transaction() {
+        // Use transaction registry
+        let mut txn_registry = safe_lock(&TXN_REGISTRY, "declare_cursor_with_context txn")?;
+        let trx = txn_registry
+            .get_mut(id)
+            .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
+
+        TOKIO_RUNTIME.block_on(async {
+            let mut result_rows = trx
+                .query(sql, decoded_args)
+                .await
+                .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
+
+            let mut columns: Vec<String> = Vec::new();
+            let mut rows: Vec<Vec<Value>> = Vec::new();
+
+            while let Some(row) = result_rows
+                .next()
+                .await
+                .map_err(|e| rustler::Error::Term(Box::new(e.to_string())))?
+            {
+                if columns.is_empty() {
+                    for i in 0..row.column_count() {
+                        if let Some(name) = row.column_name(i) {
+                            columns.push(name.to_string());
+                        } else {
+                            columns.push(format!("col{}", i));
+                        }
+                    }
+                }
+
+                let mut row_values = Vec::new();
+                for i in 0..columns.len() {
+                    let value = row.get(i as i32).unwrap_or(Value::Null);
+                    row_values.push(value);
+                }
+                rows.push(row_values);
+            }
+
+            Ok::<_, rustler::Error>((columns, rows))
+        })?
+    } else {
+        // Use connection registry
+        let conn_map = safe_lock(&CONNECTION_REGISTRY, "declare_cursor_with_context conn")?;
+        let client = conn_map
+            .get(id)
+            .ok_or_else(|| rustler::Error::Term(Box::new("Connection not found")))?
+            .clone();
+
+        drop(conn_map);
+
+        TOKIO_RUNTIME.block_on(async {
+            let client_guard = safe_lock_arc(&client, "declare_cursor_with_context client")?;
+            let conn_guard =
+                safe_lock_arc(&client_guard.client, "declare_cursor_with_context conn")?;
+
+            let mut result_rows = conn_guard
+                .query(sql, decoded_args)
+                .await
+                .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
+
+            let mut columns: Vec<String> = Vec::new();
+            let mut rows: Vec<Vec<Value>> = Vec::new();
+
+            while let Some(row) = result_rows
+                .next()
+                .await
+                .map_err(|e| rustler::Error::Term(Box::new(e.to_string())))?
+            {
+                if columns.is_empty() {
+                    for i in 0..row.column_count() {
+                        if let Some(name) = row.column_name(i) {
+                            columns.push(name.to_string());
+                        } else {
+                            columns.push(format!("col{}", i));
+                        }
+                    }
+                }
+
+                let mut row_values = Vec::new();
+                for i in 0..columns.len() {
+                    let value = row.get(i as i32).unwrap_or(Value::Null);
+                    row_values.push(value);
+                }
+                rows.push(row_values);
+            }
+
+            Ok::<_, rustler::Error>((columns, rows))
+        })?
+    };
+
+    let cursor_id = Uuid::new_v4().to_string();
+    let cursor_data = CursorData {
+        columns,
+        rows,
+        position: 0,
+    };
+
+    safe_lock(&CURSOR_REGISTRY, "declare_cursor_with_context cursor")?
+        .insert(cursor_id.clone(), cursor_data);
+
+    Ok(cursor_id)
 }
 
 #[rustler::nif]
