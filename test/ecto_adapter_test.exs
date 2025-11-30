@@ -134,4 +134,26 @@ defmodule Ecto.Adapters.LibSqlTest do
       assert {:blob, <<1, 2, 3>>} == result
     end
   end
+
+  describe "autogenerate" do
+    test "autogenerate(:id) returns nil" do
+      assert LibSql.autogenerate(:id) == nil
+    end
+
+    test "autogenerate(:binary_id) returns a string UUID" do
+      uuid = LibSql.autogenerate(:binary_id)
+      assert is_binary(uuid)
+      # String UUIDs are 36 characters (with hyphens)
+      assert String.length(uuid) == 36
+      # Verify it's a valid UUID format
+      assert uuid =~ ~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    end
+
+    test "autogenerate(:embed_id) returns a string UUID" do
+      uuid = LibSql.autogenerate(:embed_id)
+      assert is_binary(uuid)
+      assert String.length(uuid) == 36
+      assert uuid =~ ~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    end
+  end
 end

@@ -472,6 +472,201 @@ defmodule Ecto.Integration.EctoLibSqlTest do
     end
   end
 
+  describe "binary_id autogeneration and storage" do
+    defmodule Document do
+      use Ecto.Schema
+      import Ecto.Changeset
+
+      @primary_key {:id, :binary_id, autogenerate: true}
+      @foreign_key_type :binary_id
+
+      schema "documents" do
+        field(:title, :string)
+        field(:content, :binary)
+
+        timestamps()
+      end
+
+      def changeset(document, attrs) do
+        document
+        |> cast(attrs, [:title, :content])
+        |> validate_required([:title])
+      end
+    end
+
+    setup do
+      # Create table with binary_id primary key and binary content field
+      Ecto.Adapters.SQL.query!(TestRepo, """
+      CREATE TABLE IF NOT EXISTS documents (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        content BLOB,
+        inserted_at DATETIME,
+        updated_at DATETIME
+      )
+      """)
+
+      on_exit(fn ->
+        Ecto.Adapters.SQL.query!(TestRepo, "DROP TABLE IF EXISTS documents")
+      end)
+
+      :ok
+    end
+
+    test "autogenerates binary_id as string UUID" do
+      changeset = Document.changeset(%Document{}, %{title: "Test Doc"})
+      {:ok, document} = TestRepo.insert(changeset)
+
+      # Verify ID is a string UUID
+      assert is_binary(document.id)
+      assert String.length(document.id) == 36
+      assert document.id =~ ~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+      # Verify it was stored in the database correctly
+      retrieved = TestRepo.get(Document, document.id)
+      assert retrieved.id == document.id
+      assert retrieved.title == "Test Doc"
+    end
+
+    test "inserts and retrieves binary data correctly" do
+      binary_content = <<0, 1, 2, 3, 4, 5, 255, 254, 253>>
+
+      changeset =
+        Document.changeset(%Document{}, %{title: "Binary Doc", content: binary_content})
+
+      {:ok, document} = TestRepo.insert(changeset)
+
+      # Verify binary content is stored
+      assert document.content == binary_content
+
+      # Retrieve and verify
+      retrieved = TestRepo.get(Document, document.id)
+      assert retrieved.content == binary_content
+    end
+
+    test "handles null binary content" do
+      changeset = Document.changeset(%Document{}, %{title: "No Content"})
+      {:ok, document} = TestRepo.insert(changeset)
+
+      assert document.content == nil
+
+      retrieved = TestRepo.get(Document, document.id)
+      assert retrieved.content == nil
+    end
+
+    test "updates binary content" do
+      initial_content = <<1, 2, 3>>
+      changeset = Document.changeset(%Document{}, %{title: "Doc", content: initial_content})
+      {:ok, document} = TestRepo.insert(changeset)
+
+      # Update with new binary content
+      new_content = <<4, 5, 6, 7, 8>>
+      update_changeset = Document.changeset(document, %{content: new_content})
+      {:ok, updated} = TestRepo.update(update_changeset)
+
+      assert updated.content == new_content
+
+      # Verify in database
+      retrieved = TestRepo.get(Document, document.id)
+      assert retrieved.content == new_content
+    end
+
+    test "can query documents by binary_id" do
+      # Insert multiple documents
+      {:ok, doc1} = TestRepo.insert(Document.changeset(%Document{}, %{title: "Doc 1"}))
+      {:ok, doc2} = TestRepo.insert(Document.changeset(%Document{}, %{title: "Doc 2"}))
+      {:ok, doc3} = TestRepo.insert(Document.changeset(%Document{}, %{title: "Doc 3"}))
+
+      # Query by ID
+      retrieved1 = TestRepo.get(Document, doc1.id)
+      retrieved2 = TestRepo.get(Document, doc2.id)
+      retrieved3 = TestRepo.get(Document, doc3.id)
+
+      assert retrieved1.title == "Doc 1"
+      assert retrieved2.title == "Doc 2"
+      assert retrieved3.title == "Doc 3"
+
+      # Verify all IDs are different
+      assert doc1.id != doc2.id
+      assert doc2.id != doc3.id
+      assert doc1.id != doc3.id
+    end
+
+    test "binary_id works with associations" do
+      defmodule Author do
+        use Ecto.Schema
+
+        @primary_key {:id, :binary_id, autogenerate: true}
+
+        schema "authors" do
+          field(:name, :string)
+        end
+      end
+
+      defmodule Article do
+        use Ecto.Schema
+
+        @primary_key {:id, :binary_id, autogenerate: true}
+        @foreign_key_type :binary_id
+
+        schema "articles" do
+          field(:title, :string)
+          belongs_to(:author, Author, type: :binary_id)
+        end
+      end
+
+      # Create tables
+      Ecto.Adapters.SQL.query!(TestRepo, """
+      CREATE TABLE IF NOT EXISTS authors (
+        id TEXT PRIMARY KEY,
+        name TEXT
+      )
+      """)
+
+      Ecto.Adapters.SQL.query!(TestRepo, """
+      CREATE TABLE IF NOT EXISTS articles (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        author_id TEXT REFERENCES authors(id)
+      )
+      """)
+
+      # Insert author
+      author_id = Ecto.UUID.generate()
+
+      Ecto.Adapters.SQL.query!(TestRepo, "INSERT INTO authors (id, name) VALUES (?, ?)", [
+        author_id,
+        "John Doe"
+      ])
+
+      # Insert article with foreign key
+      article_id = Ecto.UUID.generate()
+
+      Ecto.Adapters.SQL.query!(
+        TestRepo,
+        "INSERT INTO articles (id, title, author_id) VALUES (?, ?, ?)",
+        [article_id, "Great Article", author_id]
+      )
+
+      # Query and verify relationship
+      result =
+        Ecto.Adapters.SQL.query!(
+          TestRepo,
+          "SELECT title, author_id FROM articles WHERE id = ?",
+          [article_id]
+        )
+
+      assert result.num_rows == 1
+      [[title, retrieved_author_id]] = result.rows
+      assert title == "Great Article"
+      assert retrieved_author_id == author_id
+
+      # Cleanup
+      Ecto.Adapters.SQL.query!(TestRepo, "DROP TABLE IF EXISTS articles")
+      Ecto.Adapters.SQL.query!(TestRepo, "DROP TABLE IF EXISTS authors")
+    end
+  end
+
   # Helper function to extract errors from changeset
   defp errors_on(changeset) do
     Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->

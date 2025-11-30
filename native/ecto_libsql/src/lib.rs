@@ -4,7 +4,7 @@ use libsql::{Builder, Cipher, EncryptionConfig, Rows, Transaction, TransactionBe
 use once_cell::sync::Lazy;
 use rustler::atoms;
 use rustler::types::atom::nil;
-use rustler::{resource_impl, Atom, Encoder, Env, NifResult, Resource, Term};
+use rustler::{resource_impl, Atom, Binary, Encoder, Env, NifResult, Resource, Term};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -101,7 +101,8 @@ atoms! {
     exclusive,
     read_only,
     transaction,
-    connection
+    connection,
+    blob
 }
 
 enum Mode {
@@ -568,6 +569,16 @@ pub fn decode_term_to_value(term: Term) -> Result<Value, String> {
         Ok(Value::Integer(if v { 1 } else { 0 }))
     } else if let Ok(v) = term.decode::<String>() {
         Ok(Value::Text(v))
+    } else if let Ok((atom, data)) = term.decode::<(Atom, Vec<u8>)>() {
+        // Handle {:blob, data} tuple from Ecto binary dumper
+        if atom == blob() {
+            Ok(Value::Blob(data))
+        } else {
+            Err(format!("Unsupported atom tuple: {:?}", atom))
+        }
+    } else if let Ok(v) = term.decode::<Binary>() {
+        // Handle Elixir binaries (including BLOBs)
+        Ok(Value::Blob(v.as_slice().to_vec()))
     } else if let Ok(v) = term.decode::<Vec<u8>>() {
         Ok(Value::Blob(v))
     } else {
