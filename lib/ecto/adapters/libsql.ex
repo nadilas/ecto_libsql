@@ -275,7 +275,6 @@ defmodule Ecto.Adapters.LibSql do
   def dumpers(:decimal, type), do: [type, &decimal_encode/1]
   def dumpers(_primitive, type), do: [type]
 
-  defp blob_encode(value), do: {:ok, {:blob, value}}
   defp bool_encode(false), do: {:ok, 0}
   defp bool_encode(true), do: {:ok, 1}
 
