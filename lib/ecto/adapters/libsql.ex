@@ -89,7 +89,7 @@ defmodule Ecto.Adapters.LibSql do
 
   @impl Ecto.Adapter.Schema
   def autogenerate(:id), do: nil
-  def autogenerate(:binary_id), do: Ecto.UUID.bingenerate()
+  def autogenerate(:binary_id), do: Ecto.UUID.generate()
   def autogenerate(:embed_id), do: Ecto.UUID.generate()
 
   ## Storage API
@@ -208,7 +208,7 @@ defmodule Ecto.Adapters.LibSql do
 
   @doc false
   def loaders(:boolean, type), do: [&bool_decode/1, type]
-  def loaders(:binary_id, type), do: [Ecto.UUID, type]
+  def loaders(:binary_id, type), do: [type]
   def loaders(:utc_datetime, type), do: [&datetime_decode/1, type]
   def loaders(:naive_datetime, type), do: [&datetime_decode/1, type]
   def loaders(:date, type), do: [&date_decode/1, type]
@@ -265,8 +265,8 @@ defmodule Ecto.Adapters.LibSql do
   defp decimal_decode(value), do: {:ok, value}
 
   @doc false
-  def dumpers(:binary, type), do: [type, &blob_encode/1]
-  def dumpers(:binary_id, type), do: [type, Ecto.UUID]
+  def dumpers(:binary, type), do: [type]
+  def dumpers(:binary_id, type), do: [type]
   def dumpers(:boolean, type), do: [type, &bool_encode/1]
   def dumpers(:utc_datetime, type), do: [type, &datetime_encode/1]
   def dumpers(:naive_datetime, type), do: [type, &datetime_encode/1]
@@ -275,7 +275,6 @@ defmodule Ecto.Adapters.LibSql do
   def dumpers(:decimal, type), do: [type, &decimal_encode/1]
   def dumpers(_primitive, type), do: [type]
 
-  defp blob_encode(value), do: {:ok, {:blob, value}}
   defp bool_encode(false), do: {:ok, 0}
   defp bool_encode(true), do: {:ok, 1}
 

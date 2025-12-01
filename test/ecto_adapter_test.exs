@@ -128,10 +128,32 @@ defmodule Ecto.Adapters.LibSqlTest do
       assert result == "10:30:00"
     end
 
-    test "dumps binary with blob wrapper" do
-      dumper = LibSql.dumpers(:binary, :binary) |> List.last()
-      {:ok, result} = dumper.(<<1, 2, 3>>)
-      assert {:blob, <<1, 2, 3>>} == result
+    test "dumps binary as-is (no wrapper needed)" do
+      dumpers = LibSql.dumpers(:binary, :binary)
+      # Should just be [type] - binary passes through directly to Rust
+      assert dumpers == [:binary]
+    end
+  end
+
+  describe "autogenerate" do
+    test "autogenerate(:id) returns nil" do
+      assert LibSql.autogenerate(:id) == nil
+    end
+
+    test "autogenerate(:binary_id) returns a string UUID" do
+      uuid = LibSql.autogenerate(:binary_id)
+      assert is_binary(uuid)
+      # String UUIDs are 36 characters (with hyphens)
+      assert String.length(uuid) == 36
+      # Verify it's a valid UUID format
+      assert uuid =~ ~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    end
+
+    test "autogenerate(:embed_id) returns a string UUID" do
+      uuid = LibSql.autogenerate(:embed_id)
+      assert is_binary(uuid)
+      assert String.length(uuid) == 36
+      assert uuid =~ ~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     end
   end
 end
