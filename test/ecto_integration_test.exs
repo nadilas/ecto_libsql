@@ -690,7 +690,8 @@ defmodule Ecto.Integration.EctoLibSqlTest do
     end
 
     setup do
-      # Drop and recreate table for each test to ensure clean state
+      # Drop index and table to ensure clean state
+      Ecto.Adapters.SQL.query!(TestRepo, "DROP INDEX IF EXISTS locations_slug_parent_index")
       Ecto.Adapters.SQL.query!(TestRepo, "DROP TABLE IF EXISTS locations")
 
       # Create table with composite unique index
@@ -707,10 +708,11 @@ defmodule Ecto.Integration.EctoLibSqlTest do
 
       Ecto.Adapters.SQL.query!(
         TestRepo,
-        "CREATE UNIQUE INDEX locations_slug_parent_index ON locations (slug, parent_slug)"
+        "CREATE UNIQUE INDEX IF NOT EXISTS locations_slug_parent_index ON locations (slug, parent_slug)"
       )
 
       on_exit(fn ->
+        Ecto.Adapters.SQL.query!(TestRepo, "DROP INDEX IF EXISTS locations_slug_parent_index")
         Ecto.Adapters.SQL.query!(TestRepo, "DROP TABLE IF EXISTS locations")
       end)
 
