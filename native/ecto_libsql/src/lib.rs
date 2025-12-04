@@ -1670,6 +1670,16 @@ fn release_savepoint(trx_id: &str, name: &str) -> NifResult<Atom> {
         .get_mut(trx_id)
         .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
 
+    // Validate savepoint name is a valid SQL identifier (alphanumeric + underscore, not starting with digit)
+    if name.is_empty()
+        || !name.chars().all(|c| c.is_alphanumeric() || c == '_')
+        || name.chars().next().map_or(true, |c| c.is_ascii_digit())
+    {
+        return Err(rustler::Error::Term(Box::new(
+            "Invalid savepoint name: must be a valid SQL identifier",
+        )));
+    }
+
     let sql = format!("RELEASE SAVEPOINT {}", name);
 
     TOKIO_RUNTIME
@@ -1689,6 +1699,16 @@ fn rollback_to_savepoint(trx_id: &str, name: &str) -> NifResult<Atom> {
         .get_mut(trx_id)
         .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
 
+    // Validate savepoint name is a valid SQL identifier (alphanumeric + underscore, not starting with digit)
+    if name.is_empty()
+        || !name.chars().all(|c| c.is_alphanumeric() || c == '_')
+        || name.chars().next().map_or(true, |c| c.is_ascii_digit())
+    {
+        return Err(rustler::Error::Term(Box::new(
+            "Invalid savepoint name: must be a valid SQL identifier",
+        )));
+    }
+
     let sql = format!("ROLLBACK TO SAVEPOINT {}", name);
 
     TOKIO_RUNTIME
@@ -1701,8 +1721,8 @@ fn rollback_to_savepoint(trx_id: &str, name: &str) -> NifResult<Atom> {
 }
 
 /// Get the current frame number from a remote replica database.
-/// Returns 0 if not a replica or frame number unknown.
-/// Note: libsql 0.9.27 doesn't expose frame number API yet
+/// **Note**: This is currently a placeholder - libsql 0.9.27 doesn't expose the frame number API.
+/// Always returns 0. Will be implemented when the upstream API becomes available.
 #[rustler::nif(schedule = "DirtyIo")]
 fn get_frame_number(conn_id: &str) -> NifResult<u64> {
     let conn_map = safe_lock(&CONNECTION_REGISTRY, "get_frame_number conn_map")?;
