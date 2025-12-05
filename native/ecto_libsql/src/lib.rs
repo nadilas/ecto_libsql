@@ -1210,29 +1210,18 @@ fn declare_cursor_with_context(
         .collect::<Result<_, _>>()
         .map_err(|e| rustler::Error::Term(Box::new(e)))?;
 
-    // Determine conn_id for cursor ownership tracking
-    let conn_id = if id_type == transaction() {
-        // For transaction, get conn_id from TransactionEntry
-        let txn_registry = safe_lock(&TXN_REGISTRY, "declare_cursor_with_context txn")?;
-        let entry = txn_registry
-            .get(id)
-            .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
-        entry.conn_id.clone()
-    } else if id_type == connection() {
-        // For connection, use the id directly
-        id.to_string()
-    } else {
-        return Err(rustler::Error::Term(Box::new("Invalid id_type for cursor")));
-    };
-
-    let (columns, rows) = if id_type == transaction() {
-        // Use transaction registry
+    let (conn_id, columns, rows) = if id_type == transaction() {
+        // CONSOLIDATED LOCK SCOPE: Prevent TOCTOU by holding lock for both conn_id lookup and query execution
         let mut txn_registry = safe_lock(&TXN_REGISTRY, "declare_cursor_with_context txn")?;
         let entry = txn_registry
             .get_mut(id)
             .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
 
-        TOKIO_RUNTIME.block_on(async {
+        // Capture conn_id while we hold the lock
+        let conn_id_for_cursor = entry.conn_id.clone();
+
+        // Execute query without releasing the lock
+        let (cols, rows) = TOKIO_RUNTIME.block_on(async {
             let mut result_rows = entry
                 .transaction
                 .query(sql, decoded_args)
@@ -1266,9 +1255,12 @@ fn declare_cursor_with_context(
             }
 
             Ok::<_, rustler::Error>((columns, rows))
-        })?
-    } else {
-        // Use connection registry
+        })?;
+
+        (conn_id_for_cursor, cols, rows)
+    } else if id_type == connection() {
+        // For connection, use the id directly
+        let conn_id_for_cursor = id.to_string();
         let conn_map = safe_lock(&CONNECTION_REGISTRY, "declare_cursor_with_context conn")?;
         let client = conn_map
             .get(id)
@@ -1277,7 +1269,7 @@ fn declare_cursor_with_context(
 
         drop(conn_map);
 
-        TOKIO_RUNTIME.block_on(async {
+        let (cols, rows) = TOKIO_RUNTIME.block_on(async {
             let client_guard = safe_lock_arc(&client, "declare_cursor_with_context client")?;
             let conn_guard =
                 safe_lock_arc(&client_guard.client, "declare_cursor_with_context conn")?;
@@ -1314,7 +1306,11 @@ fn declare_cursor_with_context(
             }
 
             Ok::<_, rustler::Error>((columns, rows))
-        })?
+        })?;
+
+        (conn_id_for_cursor, cols, rows)
+    } else {
+        return Err(rustler::Error::Term(Box::new("Invalid id_type for cursor")));
     };
 
     let cursor_id = Uuid::new_v4().to_string();
