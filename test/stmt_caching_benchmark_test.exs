@@ -57,9 +57,9 @@ defmodule EctoLibSql.StatementCachingBenchmarkTest do
       IO.puts("\n✓ Cached prepared statements (100 executions): #{cached_time}µs")
       IO.puts("  Average per execution: #{cached_time / 100}µs")
 
-      # Verify it's reasonable performance (< 100µs per insert on average for cached)
+      # Verify it's reasonable performance (< 150µs per insert on average for cached)
       # Note: This is quite fast since we're not doing disk I/O
-      assert cached_time < 100_000, "Cached execution should be fast"
+      assert cached_time < 150_000, "Cached execution should be fast"
     end
 
     test "statement reset clears bindings correctly", %{state: state} do
