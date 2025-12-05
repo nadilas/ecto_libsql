@@ -303,11 +303,18 @@ let rows = query_result.into_iter().collect::<Vec<_>>();  // ← Loads EVERYTHIN
 
 **Status**: ✅ **COMPLETE** (2 of 3 features fully working, 1 deferred)
 
+**LibSQL 0.9.29 Verification (Dec 4, 2025)**:
+- ✅ Verified all replication APIs are using correct libsql 0.9.29 methods
+- ✅ `replication_index()` API confirmed in use (not legacy methods)
+- ✅ `sync_until()` API confirmed correct
+- ✅ `flush_replicator()` API confirmed correct
+- ⭐ **NEW DISCOVERY**: `max_write_replication_index()` API available but not yet implemented
+
 **Completed Features**:
 1. ✅ **Advanced Replica Sync Control** - FULL IMPLEMENTATION
-   - `get_frame_number(conn_id)` NIF - Monitor replication frame
-   - `sync_until(conn_id, frame_no)` NIF - Wait for specific frame
-   - `flush_replicator(conn_id)` NIF - Push pending writes
+   - `get_frame_number(conn_id)` NIF - Monitor replication frame (uses `db.replication_index()`)
+   - `sync_until(conn_id, frame_no)` NIF - Wait for specific frame (uses `db.sync_until()`)
+   - `flush_replicator(conn_id)` NIF - Push pending writes (uses `db.flush_replicator()`)
    - Elixir wrappers: `get_frame_number_for_replica()`, `sync_until_frame()`, `flush_and_get_frame()`
    - All with proper error handling and timeouts
    - **Tests**: All passing (271 tests, 0 failures)
@@ -335,6 +342,73 @@ let rows = query_result.into_iter().collect::<Vec<_>>();  // ← Loads EVERYTHIN
 - Safe concurrent access verified
 - Proper error handling throughout
 - Documentation complete with examples
+
+---
+
+## Phase 2.5: New LibSQL 0.9.29 Features (v0.8.0)
+
+**Target Date**: December 2025 (1-2 days)
+**Goal**: Add newly discovered libsql 0.9.29 replication monitoring features
+**Impact**: **MEDIUM** - Enhances read-your-writes consistency patterns
+
+### 2.5.1 Max Write Replication Index (P1) ⭐ NEW
+
+**Status**: ⚠️ **NOT YET IMPLEMENTED** (just discovered Dec 4, 2025)
+
+**What It Is**: Track the highest replication frame number from any write operation performed through connections created from a `Database` object.
+
+**Why It Matters**: Enables robust read-your-writes consistency across replicas.
+
+**Use Case**:
+```elixir
+# Write on primary
+{:ok, user} = Repo.insert(%User{name: "Alice"})
+
+# Get the highest frame our writes reached
+{:ok, max_write_frame} = EctoLibSql.Native.max_write_replication_index(primary_state)
+
+# Ensure replica has synced to at least this frame
+:ok = EctoLibSql.Native.sync_until_frame(replica_state, max_write_frame)
+
+# Now replica reads are guaranteed to see our writes
+user = Repo.get_by(User, name: "Alice")  # ✅ Will find the user
+```
+
+**libsql API**:
+```rust
+// database.rs:474-483
+pub fn max_write_replication_index(&self) -> Option<FrameNo> {
+    let index = self.max_write_replication_index
+        .load(std::sync::atomic::Ordering::SeqCst);
+    if index == 0 { None } else { Some(index) }
+}
+```
+
+**Implementation**:
+- [ ] Add `max_write_replication_index(conn_id)` NIF in lib.rs
+- [ ] Add Elixir NIF stub in native.ex
+- [ ] Add Elixir wrapper `max_write_replication_index/1` with documentation
+- [ ] Add tests for all connection modes (local, remote, replica)
+- [ ] Update AGENTS.md with API documentation
+- [ ] Update CHANGELOG.md
+
+**Testing**:
+- [ ] Returns 0 for fresh connection
+- [ ] Increases after write operations
+- [ ] Tracks across multiple writes
+- [ ] Returns 0 for local-only connections
+- [ ] Handles errors gracefully (invalid connection)
+- [ ] Works in embedded replica mode
+
+**Estimated Effort**: 2-3 hours
+**Priority**: **MEDIUM** - Nice-to-have for advanced consistency patterns
+**Complexity**: **LOW** - Straightforward NIF wrapping synchronous method
+
+**Implementation Notes**:
+- Unlike other replication functions, this is **synchronous** (no async/await needed)
+- Tracks writes at the `Database` level, not per-connection
+- Works across all connections created from same `Database` object
+- Useful for coordinating writes across primary and replica connections
 
 ---
 

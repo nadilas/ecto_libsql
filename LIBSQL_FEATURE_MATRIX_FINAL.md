@@ -137,7 +137,7 @@ let stmt = conn_guard.prepare(&sql).await  // ← Called EVERY time!
 
 ---
 
-### 5. Replica Sync Features (67% Coverage)
+### 5. Replica Sync Features (78% Coverage) ⬆️
 
 | Feature | Status | Implementation | libsql API | Priority |
 |---------|--------|---------------|-----------|----------|
@@ -145,13 +145,19 @@ let stmt = conn_guard.prepare(&sql).await  // ← Called EVERY time!
 | Sync with timeout | ✅ | `sync_with_timeout` (lib.rs:44) | Custom wrapper | P0 |
 | Auto-sync on writes | ✅ | Built-in | libsql automatic | P0 |
 | Sync frames | ❌ | Not implemented | `db.sync_frames()` | P2 |
-| Sync until frame | ✅ | `sync_until/2` (lib.rs) | `db.sync_until()` | P2 |
-| Get frame number | ✅ | `get_frame_number/1` (lib.rs) | `db.get_frame_no()` | P2 |
-| Flush replicator | ✅ | `flush_replicator/1` (lib.rs) | `db.flush_replicator()` | P2 |
-| Freeze database | ❌ | Not implemented | `db.freeze()` | P2 |
+| Sync until frame | ✅ | `sync_until/2` (lib.rs:1748) | `db.sync_until()` | P2 |
+| Get replication index | ✅ | `get_frame_number/1` (lib.rs:1718) | `db.replication_index()` | P2 |
+| Flush replicator | ✅ | `flush_replicator/1` (lib.rs:1778) | `db.flush_replicator()` | P2 |
+| Max write replication index | ⚠️ | **Not implemented yet** | `db.max_write_replication_index()` | P1 |
+| Freeze database | ❌ | Stubbed (lib.rs:1812) | `db.freeze()` | P2 |
 | Flush writes | ❌ | Not implemented | `db.flush()` | P2 |
 
 **Assessment**: Excellent replica sync support! Core sync functionality and advanced monitoring features are implemented (added in v0.6.0, PR #27). Can now monitor replication lag via frame numbers and fine-tune sync behaviour.
+
+**LibSQL 0.9.29 Update (Dec 4, 2025)**:
+- ✅ Verified all NIFs use correct libsql 0.9.29 APIs (`replication_index()`, `sync_until()`, `flush_replicator()`)
+- ⚠️ **New Discovery**: `max_write_replication_index()` available but not yet wrapped
+- 🔄 `freeze()` is stubbed but needs architecture work to fully implement
 
 **Important Note** (from code comments lines 507-513, 737-738):
 > libsql automatically syncs writes to remote for embedded replicas. Manual sync is for pulling remote changes locally.
@@ -165,12 +171,16 @@ let stmt = conn_guard.prepare(&sql).await  // ← Called EVERY time!
 
 **Example Usage of Advanced Sync Features**:
 ```elixir
-# Monitor replication lag (now available!)
+# Monitor replication lag (implemented!)
 {:ok, frame} = EctoLibSql.Native.get_frame_number(state)
 {:ok, new_state} = EctoLibSql.Native.sync_until(state, frame + 100)
 
-# Flush pending writes (now available!)
+# Flush pending writes (implemented!)
 {:ok, new_state} = EctoLibSql.Native.flush_replicator(state)
+
+# NEW: Track max write frame (coming in v0.8.0!)
+{:ok, max_write_frame} = EctoLibSql.Native.max_write_replication_index(state)
+:ok = EctoLibSql.Native.sync_until_frame(replica_state, max_write_frame)
 
 # Still missing: Disaster recovery
 # :ok = EctoLibSql.freeze(repo)  # Convert replica to standalone DB

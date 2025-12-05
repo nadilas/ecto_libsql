@@ -1757,10 +1757,10 @@ fn sync_until(conn_id: &str, frame_no: u64) -> NifResult<Atom> {
         let client_guard = safe_lock_arc(&client, "sync_until client")
             .map_err(|e| format!("Failed to lock client: {:?}", e))?;
 
-        client_guard
-            .db
-            .sync_until(frame_no)
+        let timeout_duration = tokio::time::Duration::from_secs(DEFAULT_SYNC_TIMEOUT_SECS);
+        tokio::time::timeout(timeout_duration, client_guard.db.sync_until(frame_no))
             .await
+            .map_err(|_| format!("sync_until timed out after {} seconds", DEFAULT_SYNC_TIMEOUT_SECS))?
             .map_err(|e| format!("sync_until failed: {}", e))?;
 
         Ok::<_, String>(())
@@ -1787,13 +1787,13 @@ fn flush_replicator(conn_id: &str) -> NifResult<u64> {
         let client_guard = safe_lock_arc(&client, "flush_replicator client")
             .map_err(|e| format!("Failed to lock client: {:?}", e))?;
 
-        let frame_no = client_guard
-            .db
-            .flush_replicator()
+        let timeout_duration = tokio::time::Duration::from_secs(DEFAULT_SYNC_TIMEOUT_SECS);
+        let frame_no = tokio::time::timeout(timeout_duration, client_guard.db.flush_replicator())
             .await
+            .map_err(|_| format!("flush_replicator timed out after {} seconds", DEFAULT_SYNC_TIMEOUT_SECS))?
             .map_err(|e| format!("flush_replicator failed: {}", e))?;
 
-        Ok::<_, String>(frame_no.unwrap_or(0))
+        frame_no.ok_or_else(|| "Flush replicator returned no frame number (not a replica or no frames applied)".to_string())
     });
 
     match result {

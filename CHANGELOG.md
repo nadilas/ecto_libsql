@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **LibSQL 0.9.29 API Verification** (Dec 4, 2025)
+  - Verified all replication NIFs use correct libsql 0.9.29 APIs
+  - `get_frame_number/1` confirmed using `db.replication_index()` (not legacy methods)
+  - `sync_until/2` confirmed using `db.sync_until()`
+  - `flush_replicator/1` confirmed using `db.flush_replicator()`
+  - All implementations verified correct and production-ready
+
+### To Be Added (v0.8.0)
+
+- **Max Write Replication Index** ⭐ NEW
+  - `max_write_replication_index/1` - Track highest frame number from write operations
+  - Enables read-your-writes consistency across replicas
+  - Synchronous NIF wrapper around `db.max_write_replication_index()`
+  - Use case: Ensure replica syncs to at least your write frame before reading
+  - Estimated: 2-3 hours implementation + tests + documentation
+
 ### Added
 
 - **Connection Management Features**
@@ -34,10 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Advanced Replica Sync Control**
    - `get_frame_number(conn_id)` NIF - Monitor replication frame
-   - `sync_until(conn_id, frame_no)` NIF - Wait for specific frame
-   - `flush_replicator(conn_id)` NIF - Push pending writes
+   - `sync_until(conn_id, frame_no)` NIF - Wait for specific frame with 30-second timeout
+   - `flush_replicator(conn_id)` NIF - Push pending writes with 30-second timeout
    - Elixir wrappers: `get_frame_number_for_replica()`, `sync_until_frame()`, `flush_and_get_frame()`
-   - All with proper error handling and timeouts
+   - All with proper error handling, explicit None handling, and network timeouts
+   - Improved error messages for timeout and non-replica scenarios
 
 - **Prepared Statement Introspection**
    - `stmt_column_count/2` - Get number of columns in a prepared statement result set

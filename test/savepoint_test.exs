@@ -17,7 +17,7 @@ defmodule EctoLibSql.SavepointTest do
   end
 
   # Helper function to execute SQL within a transaction
-  defp exec_trx_sql(state, sql, args \\ []) do
+  defp exec_trx_sql(state, sql, args) do
     query = %Query{statement: sql}
     Native.execute_with_trx(state, query, args)
   end
