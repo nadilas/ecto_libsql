@@ -152,10 +152,10 @@ defmodule EctoLibSql.Native do
   def savepoint(_trx_id, _name), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def release_savepoint(_trx_id, _name), do: :erlang.nif_error(:nif_not_loaded)
+  def release_savepoint(_conn_id, _trx_id, _name), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def rollback_to_savepoint(_trx_id, _name), do: :erlang.nif_error(:nif_not_loaded)
+  def rollback_to_savepoint(_conn_id, _trx_id, _name), do: :erlang.nif_error(:nif_not_loaded)
 
   # Phase 2: Advanced Replica Features
 
@@ -1005,9 +1005,12 @@ defmodule EctoLibSql.Native do
       :ok = EctoLibSql.Native.release_savepoint_by_name(trx_state, "sp1")
 
   """
-  def release_savepoint_by_name(%EctoLibSql.State{trx_id: trx_id} = _state, name)
-      when is_binary(trx_id) and is_binary(name) do
-    case release_savepoint(trx_id, name) do
+  def release_savepoint_by_name(
+        %EctoLibSql.State{conn_id: conn_id, trx_id: trx_id} = _state,
+        name
+      )
+      when is_binary(conn_id) and is_binary(trx_id) and is_binary(name) do
+    case release_savepoint(conn_id, trx_id, name) do
       :ok -> :ok
       {:error, reason} -> {:error, reason}
       other -> {:error, "Unexpected response: #{inspect(other)}"}
@@ -1043,9 +1046,12 @@ defmodule EctoLibSql.Native do
       :ok = EctoLibSql.Native.commit(trx_state)
 
   """
-  def rollback_to_savepoint_by_name(%EctoLibSql.State{trx_id: trx_id} = _state, name)
-      when is_binary(trx_id) and is_binary(name) do
-    case rollback_to_savepoint(trx_id, name) do
+  def rollback_to_savepoint_by_name(
+        %EctoLibSql.State{conn_id: conn_id, trx_id: trx_id} = _state,
+        name
+      )
+      when is_binary(conn_id) and is_binary(trx_id) and is_binary(name) do
+    case rollback_to_savepoint(conn_id, trx_id, name) do
       :ok -> :ok
       {:error, reason} -> {:error, reason}
       other -> {:error, "Unexpected response: #{inspect(other)}"}

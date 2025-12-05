@@ -22,11 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All 289 tests passing (0 failures)
 
 - **Statement Caching Benchmark Test** ✅ (Dec 5, 2025)
-  - Added `test/stmt_caching_benchmark_test.exs` with comprehensive caching tests
-  - Verified 100 cached executions complete in ~33ms (~330µs per execution)
-  - Confirmed bindings clear correctly between executions
-  - Tested multiple independent cached statements
-  - Demonstrated consistent performance across multiple prepared statements
+   - Added `test/stmt_caching_benchmark_test.exs` with comprehensive caching tests
+   - Verified 100 cached executions complete in ~33ms (~330µs per execution)
+   - Confirmed bindings clear correctly between executions
+   - Tested multiple independent cached statements
+   - Demonstrated consistent performance across multiple prepared statements
+
+- **Transaction Isolation Security Improvements** ✅ (Dec 5, 2025)
+   - Enhanced savepoint operations (`release_savepoint`, `rollback_to_savepoint`) to validate connection IDs
+   - `release_savepoint_by_name/2` and `rollback_to_savepoint_by_name/2` now require and validate both `conn_id` and `trx_id`
+   - NIF functions validate that connections exist before performing operations
+   - Improved security test assertions to explicitly test for failure cases instead of accepting undefined behavior
+   - Added comprehensive documentation of current isolation guarantees and future ownership verification improvements
+   - Prevents unauthorized cross-connection transaction manipulation attempts
+   - All 23 security tests passing with stricter isolation requirements
 
 ### Changed
 

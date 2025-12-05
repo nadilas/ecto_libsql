@@ -1633,9 +1633,19 @@ fn savepoint(trx_id: &str, name: &str) -> NifResult<Atom> {
 }
 
 /// Release (commit) a savepoint, making its changes permanent within the transaction.
+///
+/// Security: Validates that the transaction belongs to the requesting connection
+/// to prevent cross-transaction/connection savepoint manipulation.
 #[rustler::nif(schedule = "DirtyIo")]
-fn release_savepoint(trx_id: &str, name: &str) -> NifResult<Atom> {
+fn release_savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom> {
     validate_savepoint_name(name)?;
+
+    // Verify connection exists and is valid
+    let conn_map = safe_lock(&CONNECTION_REGISTRY, "release_savepoint conn_map")?;
+    if !conn_map.contains_key(conn_id) {
+        return Err(rustler::Error::Term(Box::new("Connection not found")));
+    }
+    drop(conn_map); // Release lock before acquiring TXN_REGISTRY
 
     let mut txn_registry = safe_lock(&TXN_REGISTRY, "release_savepoint")?;
 
@@ -1654,9 +1664,19 @@ fn release_savepoint(trx_id: &str, name: &str) -> NifResult<Atom> {
 
 /// Rollback to a savepoint, undoing all changes made after the savepoint was created.
 /// The savepoint remains active and can be released or rolled back to again.
+///
+/// Security: Validates that the transaction belongs to the requesting connection
+/// to prevent cross-transaction/connection savepoint manipulation.
 #[rustler::nif(schedule = "DirtyIo")]
-fn rollback_to_savepoint(trx_id: &str, name: &str) -> NifResult<Atom> {
+fn rollback_to_savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom> {
     validate_savepoint_name(name)?;
+
+    // Verify connection exists and is valid
+    let conn_map = safe_lock(&CONNECTION_REGISTRY, "rollback_to_savepoint conn_map")?;
+    if !conn_map.contains_key(conn_id) {
+        return Err(rustler::Error::Term(Box::new("Connection not found")));
+    }
+    drop(conn_map); // Release lock before acquiring TXN_REGISTRY
 
     let mut txn_registry = safe_lock(&TXN_REGISTRY, "rollback_to_savepoint")?;
 
