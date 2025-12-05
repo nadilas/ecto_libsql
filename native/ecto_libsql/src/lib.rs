@@ -145,6 +145,45 @@ fn decode_transaction_behavior(atom: Atom) -> Option<TransactionBehavior> {
     }
 }
 
+/// Helper function to verify transaction ownership.
+///
+/// Returns an error if the transaction does not belong to the specified connection.
+fn verify_transaction_ownership(
+    entry: &TransactionEntry,
+    conn_id: &str,
+) -> Result<(), rustler::Error> {
+    if entry.conn_id != conn_id {
+        return Err(rustler::Error::Term(Box::new(
+            "Transaction does not belong to this connection",
+        )));
+    }
+    Ok(())
+}
+
+/// Helper function to verify statement ownership.
+///
+/// Returns an error if the statement does not belong to the specified connection.
+fn verify_statement_ownership(stmt_conn_id: &str, conn_id: &str) -> Result<(), rustler::Error> {
+    if stmt_conn_id != conn_id {
+        return Err(rustler::Error::Term(Box::new(
+            "Statement does not belong to connection",
+        )));
+    }
+    Ok(())
+}
+
+/// Helper function to verify cursor ownership.
+///
+/// Returns an error if the cursor does not belong to the specified connection.
+fn verify_cursor_ownership(cursor: &CursorData, conn_id: &str) -> Result<(), rustler::Error> {
+    if cursor.conn_id != conn_id {
+        return Err(rustler::Error::Term(Box::new(
+            "Cursor does not belong to connection",
+        )));
+    }
+    Ok(())
+}
+
 #[rustler::nif(schedule = "DirtyIo")]
 pub fn begin_transaction(conn_id: &str) -> NifResult<String> {
     let conn_map = safe_lock(&CONNECTION_REGISTRY, "begin_transaction conn_map")?;
@@ -226,11 +265,7 @@ pub fn execute_with_transaction<'a>(
         .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
 
     // Verify transaction belongs to this connection
-    if entry.conn_id != conn_id {
-        return Err(rustler::Error::Term(Box::new(
-            "Transaction does not belong to this connection",
-        )));
-    }
+    verify_transaction_ownership(entry, conn_id)?;
 
     let decoded_args: Vec<Value> = args
         .into_iter()
@@ -260,11 +295,7 @@ pub fn query_with_trx_args<'a>(
         .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
 
     // Verify transaction belongs to this connection
-    if entry.conn_id != conn_id {
-        return Err(rustler::Error::Term(Box::new(
-            "Transaction does not belong to this connection",
-        )));
-    }
+    verify_transaction_ownership(entry, conn_id)?;
 
     let decoded_args: Vec<Value> = args
         .into_iter()
@@ -941,11 +972,7 @@ fn query_prepared<'a>(
         .ok_or_else(|| rustler::Error::Term(Box::new("Statement not found")))?;
 
     // Verify statement belongs to this connection
-    if stored_conn_id != conn_id {
-        return Err(rustler::Error::Term(Box::new(
-            "Statement does not belong to connection",
-        )));
-    }
+    verify_statement_ownership(stored_conn_id, conn_id)?;
 
     let cached_stmt = cached_stmt.clone();
 
@@ -1005,11 +1032,7 @@ fn execute_prepared<'a>(
         .ok_or_else(|| rustler::Error::Term(Box::new("Statement not found")))?;
 
     // Verify statement belongs to this connection
-    if stored_conn_id != conn_id {
-        return Err(rustler::Error::Term(Box::new(
-            "Statement does not belong to connection",
-        )));
-    }
+    verify_statement_ownership(stored_conn_id, conn_id)?;
 
     let cached_stmt = cached_stmt.clone();
 
@@ -1341,11 +1364,7 @@ fn fetch_cursor<'a>(
         .ok_or_else(|| rustler::Error::Term(Box::new("Cursor not found")))?;
 
     // Verify cursor belongs to this connection
-    if cursor.conn_id != conn_id {
-        return Err(rustler::Error::Term(Box::new(
-            "Cursor does not belong to connection",
-        )));
-    }
+    verify_cursor_ownership(cursor, conn_id)?;
 
     let remaining = cursor.rows.len().saturating_sub(cursor.position);
     let fetch_count = remaining.min(max_rows);
@@ -1623,11 +1642,7 @@ fn statement_column_count(conn_id: &str, stmt_id: &str) -> NifResult<usize> {
         .ok_or_else(|| rustler::Error::Term(Box::new("Statement not found")))?;
 
     // Verify statement belongs to this connection
-    if stored_conn_id != conn_id {
-        return Err(rustler::Error::Term(Box::new(
-            "Statement does not belong to connection",
-        )));
-    }
+    verify_statement_ownership(stored_conn_id, conn_id)?;
 
     let cached_stmt = cached_stmt.clone();
 
@@ -1656,11 +1671,7 @@ fn statement_column_name(conn_id: &str, stmt_id: &str, idx: usize) -> NifResult<
         .ok_or_else(|| rustler::Error::Term(Box::new("Statement not found")))?;
 
     // Verify statement belongs to this connection
-    if stored_conn_id != conn_id {
-        return Err(rustler::Error::Term(Box::new(
-            "Statement does not belong to connection",
-        )));
-    }
+    verify_statement_ownership(stored_conn_id, conn_id)?;
 
     let cached_stmt = cached_stmt.clone();
 
@@ -1699,11 +1710,7 @@ fn statement_parameter_count(conn_id: &str, stmt_id: &str) -> NifResult<usize> {
         .ok_or_else(|| rustler::Error::Term(Box::new("Statement not found")))?;
 
     // Verify statement belongs to this connection
-    if stored_conn_id != conn_id {
-        return Err(rustler::Error::Term(Box::new(
-            "Statement does not belong to connection",
-        )));
-    }
+    verify_statement_ownership(stored_conn_id, conn_id)?;
 
     let cached_stmt = cached_stmt.clone();
 

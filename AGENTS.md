@@ -494,10 +494,11 @@ IO.puts("Statement expects #{param_count} parameter(s)")  # Prints: 1
 IO.puts("Result will have #{col_count} column(s)")  # Prints: 4
 
 # Get column names
-{:ok, col_names} = Enum.map(0..(col_count-1), fn i ->
-  {:ok, name} = EctoLibSql.Native.statement_column_name(state, stmt_id, i)
-  name
-end)
+col_names =
+  Enum.map(0..(col_count - 1), fn i ->
+    {:ok, name} = EctoLibSql.Native.statement_column_name(state, stmt_id, i)
+    name
+  end)
 IO.inspect(col_names)  # Prints: ["id", "name", "email", "created_at"]
 
 :ok = EctoLibSql.Native.close_stmt(stmt_id)
