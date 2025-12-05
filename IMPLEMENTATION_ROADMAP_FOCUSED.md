@@ -195,10 +195,9 @@ Logger.info("Current replication frame: #{current_frame}")
 ```
 
 **libsql API**:
-- `database.sync_until(frame_no)` - Sync until specific frame
-- `database.get_frame_no()` - Get current frame number
-- `database.flush_replicator()` - Flush pending replication
-- `database.sync_frames(count)` - Sync specific number of frames
+- `replication_index()` - Get current frame number
+- `sync()` / `sync_until(frame_no)` - Sync replica until specific frame
+- `flush_replicator()` - Flush pending replication
 
 **Implementation**:
 - [x] Add `sync_until(conn_id, frame_no)` NIF
