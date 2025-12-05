@@ -79,8 +79,14 @@ pub struct CursorData {
     pub position: usize,
 }
 
+/// Transaction with ownership tracking
+pub struct TransactionEntry {
+    pub conn_id: String,
+    pub transaction: Transaction,
+}
+
 lazy_static! {
-    static ref TXN_REGISTRY: Mutex<HashMap<String, Transaction>> = Mutex::new(HashMap::new());
+    static ref TXN_REGISTRY: Mutex<HashMap<String, TransactionEntry>> = Mutex::new(HashMap::new());
     static ref STMT_REGISTRY: Mutex<HashMap<String, (String, Arc<Mutex<Statement>>)>> = Mutex::new(HashMap::new()); // (conn_id, cached_statement)
     static ref CURSOR_REGISTRY: Mutex<HashMap<String, CursorData>> = Mutex::new(HashMap::new());
     pub static ref CONNECTION_REGISTRY: Mutex<HashMap<String, Arc<Mutex<LibSQLConn>>>> =
@@ -150,7 +156,11 @@ pub fn begin_transaction(conn_id: &str) -> NifResult<String> {
             .map_err(|e| rustler::Error::Term(Box::new(format!("Begin failed: {}", e))))?;
 
         let trx_id = Uuid::new_v4().to_string();
-        safe_lock(&TXN_REGISTRY, "begin_transaction txn_registry")?.insert(trx_id.clone(), trx);
+        let entry = TransactionEntry {
+            conn_id: conn_id.to_string(),
+            transaction: trx,
+        };
+        safe_lock(&TXN_REGISTRY, "begin_transaction txn_registry")?.insert(trx_id.clone(), entry);
 
         Ok(trx_id)
     } else {
@@ -181,11 +191,15 @@ pub fn begin_transaction_with_behavior(conn_id: &str, behavior: Atom) -> NifResu
             .map_err(|e| rustler::Error::Term(Box::new(format!("Begin failed: {}", e))))?;
 
         let trx_id = Uuid::new_v4().to_string();
+        let entry = TransactionEntry {
+            conn_id: conn_id.to_string(),
+            transaction: trx,
+        };
         safe_lock(
             &TXN_REGISTRY,
             "begin_transaction_with_behavior txn_registry",
         )?
-        .insert(trx_id.clone(), trx);
+        .insert(trx_id.clone(), entry);
 
         Ok(trx_id)
     } else {
@@ -205,7 +219,7 @@ pub fn execute_with_transaction<'a>(
 ) -> NifResult<u64> {
     let mut txn_registry = safe_lock(&TXN_REGISTRY, "execute_with_transaction")?;
 
-    let trx = txn_registry
+    let entry = txn_registry
         .get_mut(trx_id)
         .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
     let decoded_args: Vec<Value> = args
@@ -215,7 +229,7 @@ pub fn execute_with_transaction<'a>(
         .map_err(|e| rustler::Error::Term(Box::new(e)))?;
 
     let result = TOKIO_RUNTIME
-        .block_on(async { trx.execute(&query, decoded_args).await })
+        .block_on(async { entry.transaction.execute(&query, decoded_args).await })
         .map_err(|e| rustler::Error::Term(Box::new(format!("Execute failed: {}", e))))?;
 
     Ok(result)
@@ -230,7 +244,7 @@ pub fn query_with_trx_args<'a>(
 ) -> NifResult<Term<'a>> {
     let mut txn_registry = safe_lock(&TXN_REGISTRY, "query_with_trx_args")?;
 
-    let trx = txn_registry
+    let entry = txn_registry
         .get_mut(trx_id)
         .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
     let decoded_args: Vec<Value> = args
@@ -240,7 +254,8 @@ pub fn query_with_trx_args<'a>(
         .map_err(|e| rustler::Error::Term(Box::new(e)))?;
 
     TOKIO_RUNTIME.block_on(async {
-        let res_rows = trx
+        let res_rows = entry
+            .transaction
             .query(&query, decoded_args)
             .await
             .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
@@ -286,22 +301,29 @@ pub fn do_sync(conn_id: &str, mode: Atom) -> NifResult<(rustler::Atom, String)> 
 #[rustler::nif(schedule = "DirtyIo")]
 pub fn commit_or_rollback_transaction(
     trx_id: &str,
-    _conn_id: &str,
+    conn_id: &str,
     _mode: Atom,
     _syncx: Atom,
     param: &str,
 ) -> NifResult<(rustler::Atom, String)> {
-    let trx = safe_lock(&TXN_REGISTRY, "commit_or_rollback txn_registry")?
+    let entry = safe_lock(&TXN_REGISTRY, "commit_or_rollback txn_registry")?
         .remove(trx_id)
         .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
 
+    // Verify that the transaction belongs to the requesting connection
+    if entry.conn_id != conn_id {
+        return Err(rustler::Error::Term(Box::new(
+            "Transaction does not belong to this connection",
+        )));
+    }
+
     let result = TOKIO_RUNTIME.block_on(async {
         if param == "commit" {
-            trx.commit()
+            entry.transaction.commit()
                 .await
                 .map_err(|e| format!("Commit error: {}", e))?;
         } else {
-            trx.rollback()
+            entry.transaction.rollback()
                 .await
                 .map_err(|e| format!("Rollback error: {}", e))?;
         }
@@ -1140,12 +1162,13 @@ fn declare_cursor_with_context(
     let (columns, rows) = if id_type == transaction() {
         // Use transaction registry
         let mut txn_registry = safe_lock(&TXN_REGISTRY, "declare_cursor_with_context txn")?;
-        let trx = txn_registry
+        let entry = txn_registry
             .get_mut(id)
             .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
 
         TOKIO_RUNTIME.block_on(async {
-            let mut result_rows = trx
+            let mut result_rows = entry
+                .transaction
                 .query(sql, decoded_args)
                 .await
                 .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
@@ -1613,20 +1636,29 @@ fn validate_savepoint_name(name: &str) -> Result<(), rustler::Error> {
 
 /// Create a savepoint within a transaction.
 /// Savepoints allow partial rollback without aborting the entire transaction.
+///
+/// NOTE: Validates that the transaction belongs to the requesting connection.
 #[rustler::nif(schedule = "DirtyIo")]
-fn savepoint(trx_id: &str, name: &str) -> NifResult<Atom> {
+fn savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom> {
     validate_savepoint_name(name)?;
 
     let mut txn_registry = safe_lock(&TXN_REGISTRY, "savepoint")?;
 
-    let trx = txn_registry
+    let entry = txn_registry
         .get_mut(trx_id)
         .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
+
+    // Verify that the transaction belongs to the requesting connection
+    if entry.conn_id != conn_id {
+        return Err(rustler::Error::Term(Box::new(
+            "Transaction does not belong to this connection",
+        )));
+    }
 
     let sql = format!("SAVEPOINT {}", name);
 
     TOKIO_RUNTIME
-        .block_on(async { trx.execute(&sql, Vec::<Value>::new()).await })
+        .block_on(async { entry.transaction.execute(&sql, Vec::<Value>::new()).await })
         .map_err(|e| rustler::Error::Term(Box::new(format!("Savepoint failed: {}", e))))?;
 
     Ok(rustler::types::atom::ok())
@@ -1634,29 +1666,28 @@ fn savepoint(trx_id: &str, name: &str) -> NifResult<Atom> {
 
 /// Release (commit) a savepoint, making its changes permanent within the transaction.
 ///
-/// Security: Validates that the transaction belongs to the requesting connection
-/// to prevent cross-transaction/connection savepoint manipulation.
+/// Security: Validates that the transaction belongs to the requesting connection.
 #[rustler::nif(schedule = "DirtyIo")]
 fn release_savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom> {
     validate_savepoint_name(name)?;
 
-    // Verify connection exists and is valid
-    let conn_map = safe_lock(&CONNECTION_REGISTRY, "release_savepoint conn_map")?;
-    if !conn_map.contains_key(conn_id) {
-        return Err(rustler::Error::Term(Box::new("Connection not found")));
-    }
-    drop(conn_map); // Release lock before acquiring TXN_REGISTRY
-
     let mut txn_registry = safe_lock(&TXN_REGISTRY, "release_savepoint")?;
 
-    let trx = txn_registry
+    let entry = txn_registry
         .get_mut(trx_id)
         .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
+
+    // Verify that the transaction belongs to the requesting connection
+    if entry.conn_id != conn_id {
+        return Err(rustler::Error::Term(Box::new(
+            "Transaction does not belong to this connection",
+        )));
+    }
 
     let sql = format!("RELEASE SAVEPOINT {}", name);
 
     TOKIO_RUNTIME
-        .block_on(async { trx.execute(&sql, Vec::<Value>::new()).await })
+        .block_on(async { entry.transaction.execute(&sql, Vec::<Value>::new()).await })
         .map_err(|e| rustler::Error::Term(Box::new(format!("Release savepoint failed: {}", e))))?;
 
     Ok(rustler::types::atom::ok())
@@ -1665,29 +1696,28 @@ fn release_savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom>
 /// Rollback to a savepoint, undoing all changes made after the savepoint was created.
 /// The savepoint remains active and can be released or rolled back to again.
 ///
-/// Security: Validates that the transaction belongs to the requesting connection
-/// to prevent cross-transaction/connection savepoint manipulation.
+/// Security: Validates that the transaction belongs to the requesting connection.
 #[rustler::nif(schedule = "DirtyIo")]
 fn rollback_to_savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom> {
     validate_savepoint_name(name)?;
 
-    // Verify connection exists and is valid
-    let conn_map = safe_lock(&CONNECTION_REGISTRY, "rollback_to_savepoint conn_map")?;
-    if !conn_map.contains_key(conn_id) {
-        return Err(rustler::Error::Term(Box::new("Connection not found")));
-    }
-    drop(conn_map); // Release lock before acquiring TXN_REGISTRY
-
     let mut txn_registry = safe_lock(&TXN_REGISTRY, "rollback_to_savepoint")?;
 
-    let trx = txn_registry
+    let entry = txn_registry
         .get_mut(trx_id)
         .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
+
+    // Verify that the transaction belongs to the requesting connection
+    if entry.conn_id != conn_id {
+        return Err(rustler::Error::Term(Box::new(
+            "Transaction does not belong to this connection",
+        )));
+    }
 
     let sql = format!("ROLLBACK TO SAVEPOINT {}", name);
 
     TOKIO_RUNTIME
-        .block_on(async { trx.execute(&sql, Vec::<Value>::new()).await })
+        .block_on(async { entry.transaction.execute(&sql, Vec::<Value>::new()).await })
         .map_err(|e| {
             rustler::Error::Term(Box::new(format!("Rollback to savepoint failed: {}", e)))
         })?;

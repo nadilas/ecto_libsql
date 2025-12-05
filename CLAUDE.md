@@ -311,8 +311,14 @@ pub struct CursorData {
     pub position: usize,
 }
 
+// Transaction entry with ownership tracking
+pub struct TransactionEntry {
+    pub conn_id: String,        // Which connection owns this transaction
+    pub transaction: Transaction,
+}
+
 // Global registries (thread-safe)
-static ref TXN_REGISTRY: Mutex<HashMap<String, Transaction>>
+static ref TXN_REGISTRY: Mutex<HashMap<String, TransactionEntry>>  // Now tracks transaction ownership
 static ref STMT_REGISTRY: Mutex<HashMap<String, (String, String)>>
 static ref CURSOR_REGISTRY: Mutex<HashMap<String, CursorData>>
 static ref CONNECTION_REGISTRY: Mutex<HashMap<String, Arc<Mutex<LibSQLConn>>>>
@@ -766,7 +772,58 @@ test "CREATE INDEX IF NOT EXISTS" do
 end
 ```
 
-### Task 5: Debug a Failing Test
+### Task 5: Working with Transaction Ownership
+
+**Context**: Transactions are now tracked with their owning connection using `TransactionEntry` struct. All savepoint and transaction operations validate ownership.
+
+1. **Understanding TransactionEntry**:
+```rust
+pub struct TransactionEntry {
+    pub conn_id: String,        // Connection that owns this transaction
+    pub transaction: Transaction, // The actual LibSQL transaction
+}
+```
+
+2. **When accessing transactions from registry**:
+```rust
+let entry = txn_registry
+    .get_mut(trx_id)
+    .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
+
+// Access the transaction via entry.transaction
+entry.transaction.execute(&sql, args).await
+```
+
+3. **Validating transaction ownership** (savepoint example):
+```rust
+if entry.conn_id != conn_id {
+    return Err(rustler::Error::Term(Box::new(
+        "Transaction does not belong to this connection",
+    )));
+}
+```
+
+4. **NIF signature updates**:
+   - `savepoint(conn_id, trx_id, name)` - Added conn_id parameter for consistency
+   - `release_savepoint(conn_id, trx_id, name)` - Validates ownership
+   - `rollback_to_savepoint(conn_id, trx_id, name)` - Validates ownership
+   - `commit_or_rollback_transaction(trx_id, conn_id, ...)` - Validates ownership
+
+5. **Testing transaction ownership**:
+```elixir
+test "rejects savepoint from wrong connection" do
+  {:ok, conn1} = EctoLibSql.connect([database: "test1.db"])
+  {:ok, conn2} = EctoLibSql.connect([database: "test2.db"])
+  
+  {:ok, trx_id} = EctoLibSql.Native.begin_transaction(conn1.conn_id)
+  
+  # This should fail - transaction belongs to conn1, not conn2
+  assert {:error, msg} = EctoLibSql.Native.savepoint(conn2.conn_id, trx_id, "sp1")
+  assert msg =~ "does not belong to this connection"
+end
+```
+
+### Task 6: Debug a Failing Test
 
 1. **Run with trace**: `mix test test/file.exs:123 --trace`
 2. **Check logs**: Tests configure logger to `:info` level

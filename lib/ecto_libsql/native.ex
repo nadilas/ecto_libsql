@@ -149,7 +149,7 @@ defmodule EctoLibSql.Native do
   def statement_parameter_count(_conn_id, _stmt_id), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def savepoint(_trx_id, _name), do: :erlang.nif_error(:nif_not_loaded)
+  def savepoint(_conn_id, _trx_id, _name), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
   def release_savepoint(_conn_id, _trx_id, _name), do: :erlang.nif_error(:nif_not_loaded)
@@ -977,9 +977,9 @@ defmodule EctoLibSql.Native do
   - You can create nested savepoints
 
   """
-  def create_savepoint(%EctoLibSql.State{trx_id: trx_id} = _state, name)
-      when is_binary(trx_id) and is_binary(name) do
-    case savepoint(trx_id, name) do
+  def create_savepoint(%EctoLibSql.State{conn_id: conn_id, trx_id: trx_id} = _state, name)
+      when is_binary(conn_id) and is_binary(trx_id) and is_binary(name) do
+    case savepoint(conn_id, trx_id, name) do
       :ok -> :ok
       {:error, reason} -> {:error, reason}
       other -> {:error, "Unexpected response: #{inspect(other)}"}

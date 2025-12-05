@@ -28,14 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    - Tested multiple independent cached statements
    - Demonstrated consistent performance across multiple prepared statements
 
-- **Transaction Isolation Security Improvements** ✅ (Dec 5, 2025)
-   - Enhanced savepoint operations (`release_savepoint`, `rollback_to_savepoint`) to validate connection IDs
-   - `release_savepoint_by_name/2` and `rollback_to_savepoint_by_name/2` now require and validate both `conn_id` and `trx_id`
-   - NIF functions validate that connections exist before performing operations
-   - Improved security test assertions to explicitly test for failure cases instead of accepting undefined behavior
-   - Added comprehensive documentation of current isolation guarantees and future ownership verification improvements
-   - Prevents unauthorized cross-connection transaction manipulation attempts
-   - All 23 security tests passing with stricter isolation requirements
+- **Full Transaction Ownership & Savepoint Connection Context** ✅ (Dec 5, 2025)
+    - Implemented complete transaction-to-connection mapping with `TransactionEntry` struct
+    - `TXN_REGISTRY` now tracks `conn_id` for each transaction, enabling ownership validation
+    - Updated `begin_transaction/1` and `begin_transaction_with_behavior/2` to store connection owner with transaction
+    - Updated `savepoint/2` NIF signature to `savepoint/3` with required `conn_id` parameter
+    - All savepoint functions (`savepoint`, `release_savepoint`, `rollback_to_savepoint`) now validate transaction ownership
+    - Updated `commit_or_rollback_transaction/5` to validate ownership before commit/rollback
+    - Updated `declare_cursor_with_context/6` to work with transaction ownership tracking
+    - Prevents cross-connection transaction manipulation by enforcing strict ownership validation
+    - Returns clear error: "Transaction does not belong to this connection" on ownership violation
+    - All 289 tests passing (including 18 savepoint-specific tests, 5 transaction isolation tests)
+    - **Security**: Now validates actual transaction ownership, not just ID existence
 
 ### Changed
 
