@@ -235,7 +235,7 @@ Enum.each(result.rows, fn [id, name, email] ->
   IO.puts("User #{id}: #{name} (#{email})")
 end)
 
-# Parameterized select
+# Parameterised select
 {:ok, _, result, state} = EctoLibSql.handle_execute(
   "SELECT name, email FROM users WHERE id = ?",
   [1],
@@ -383,7 +383,7 @@ end
 
 ### Prepared Statements
 
-Prepared statements offer significant performance improvements for repeated queries and prevent SQL injection. As of v0.7.0, statement caching is automatic and highly optimized.
+Prepared statements offer significant performance improvements for repeated queries and prevent SQL injection. As of v0.7.0, statement caching is automatic and highly optimised.
 
 #### How Statement Caching Works
 

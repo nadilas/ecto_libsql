@@ -815,34 +815,34 @@ end)
 ## Success Criteria for v1.0.0
 
 ### Feature Coverage
-- [x] **95%+ of libsql features** implemented
+- [ ] **95%+ of libsql features** implemented
 - [x] All P0 features (100%)
 - [x] All P1 features (> 90%)
-- [x] Most P2 features (> 60%)
+- [ ] Most P2 features (> 60%)
 
 ### Performance
 - [x] No statement re-preparation overhead
-- [x] Streaming cursors for large datasets
+- [ ] Streaming cursors for large datasets
 - [x] < 10% overhead from hooks/callbacks
 - [x] Benchmark suite comparing to other adapters
 
 ### Quality
 - [x] Zero `.unwrap()` in production code
-- [x] > 90% test coverage
+- [ ] > 90% test coverage
 - [x] All tests pass on Elixir 1.17-1.18, OTP 26-27
 - [x] No memory leaks under load
 
 ### Documentation
 - [x] Comprehensive AGENTS.md (API reference)
-- [x] PRODUCTION_GUIDE.md (best practices)
-- [x] REPLICA_GUIDE.md (embedded replica patterns)
+- [ ] PRODUCTION_GUIDE.md (best practices)
+- [ ] REPLICA_GUIDE.md (embedded replica patterns)
 - [x] Real-world examples for common use cases
 
 ### Community
 - [x] Published to Hex.pm
-- [x] Tagged stable release (v1.0.0)
-- [x] Announced on Elixir Forum
-- [x] Submitted to Awesome Elixir
+- [ ] Tagged stable release (v1.0.0)
+- [ ] Announced on Elixir Forum
+- [ ] Submitted to Awesome Elixir
 
 ---
 
