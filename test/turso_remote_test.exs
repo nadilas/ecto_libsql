@@ -22,7 +22,7 @@ defmodule TursoRemoteTest do
   @moduletag skip: is_nil(@turso_uri) || is_nil(@turso_token)
 
   setup_all do
-    if !(is_nil(@turso_uri) || is_nil(@turso_token)) do
+    if not (is_nil(@turso_uri) or is_nil(@turso_token)) do
       IO.puts("\n[TURSO TESTS] Running remote Turso database tests")
       IO.puts("[TURSO TESTS] Using database: #{@turso_uri}")
     end
@@ -720,7 +720,7 @@ defmodule TursoRemoteTest do
   describe "embedded replica with sync" do
     test "automatic sync from local to remote", %{table_name: table} do
       # Create unique local database file for this test
-      local_db = "test_replica_#{:erlang.unique_integer([:positive])}.db"
+      local_db = "z_ecto_libsql_test-replica_#{:erlang.unique_integer([:positive])}.db"
 
       on_exit(fn ->
         cleanup_local_db(local_db)
@@ -776,7 +776,7 @@ defmodule TursoRemoteTest do
     end
 
     test "manual sync with sync disabled", %{table_name: table} do
-      local_db = "test_manual_sync_#{:erlang.unique_integer([:positive])}.db"
+      local_db = "z_ecto_libsql_test-manual_sync_#{:erlang.unique_integer([:positive])}.db"
 
       on_exit(fn ->
         cleanup_local_db(local_db)
@@ -834,7 +834,7 @@ defmodule TursoRemoteTest do
     end
 
     test "replica provides fast local reads", %{table_name: table} do
-      local_db = "test_fast_read_#{:erlang.unique_integer([:positive])}.db"
+      local_db = "z_ecto_libsql_test-fast_read_#{:erlang.unique_integer([:positive])}.db"
 
       on_exit(fn ->
         cleanup_local_db(local_db)
@@ -894,8 +894,8 @@ defmodule TursoRemoteTest do
     end
 
     test "replica sync works bidirectionally", %{table_name: table} do
-      local_db1 = "test_bidirectional_1_#{:erlang.unique_integer([:positive])}.db"
-      local_db2 = "test_bidirectional_2_#{:erlang.unique_integer([:positive])}.db"
+      local_db1 = "z_ecto_libsql_test-bidirectional_1_#{:erlang.unique_integer([:positive])}.db"
+      local_db2 = "z_ecto_libsql_test-bidirectional_2_#{:erlang.unique_integer([:positive])}.db"
 
       on_exit(fn ->
         cleanup_local_db(local_db1)

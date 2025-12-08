@@ -454,10 +454,11 @@ end
 )
 
 # Execute multiple times with different parameters
+# (SQL is re-supplied for sync detection; statement_id reuses the cached statement)
 {:ok, rows1} = EctoLibSql.Native.execute_stmt(
   state,
   stmt_id,
-  "INSERT INTO users (name, email) VALUES (?, ?)",
+  "INSERT INTO users (name, email) VALUES (?, ?)", # Required for sync detection
   ["Alice", "alice@example.com"]
 )
 IO.puts("Inserted #{rows1} rows")

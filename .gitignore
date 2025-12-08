@@ -31,9 +31,5 @@ ecto_libsql-*.tar
 /priv/native/*.dylib
 
 # Test databases
-bar.db
-bar.db-info
-bar.db-shm
-bar.db-wal
-test_encrypted*.db
-test_encrypted*.db-*
+z_ecto_libsql_test-*.db
+z_ecto_libsql_test-*.db-*

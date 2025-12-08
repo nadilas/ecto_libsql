@@ -8,18 +8,16 @@ defmodule EctoLibSql.BatchFeaturesTest do
   use ExUnit.Case
 
   setup do
-    test_db = "test_batch_#{:erlang.unique_integer([:positive])}.db"
+    test_db = "z_ecto_libsql_test-batch_#{:erlang.unique_integer([:positive])}.db"
+
+    opts = [database: test_db]
 
     on_exit(fn ->
       File.rm(test_db)
     end)
 
-    {:ok, database: test_db}
+    {:ok, database: test_db, opts: opts}
   end
-
-  # ============================================================================
-  # Native batch execution (SQL string) - IMPLEMENTED ✅
-  # ============================================================================
 
   describe "native batch execution (SQL string)" do
     test "execute_batch_sql executes multiple statements", %{database: database} do
@@ -97,6 +95,157 @@ defmodule EctoLibSql.BatchFeaturesTest do
       {:ok, results} = EctoLibSql.Native.execute_batch_sql(state, sql)
 
       assert is_list(results)
+
+      EctoLibSql.disconnect([], state)
+    end
+
+    test "batch operations - non-transactional", %{database: database} do
+      {:ok, state} = EctoLibSql.connect(database: database)
+
+      # Create table
+      create_table = %EctoLibSql.Query{
+        statement: "CREATE TABLE IF NOT EXISTS batch_test (id INTEGER PRIMARY KEY, value TEXT)"
+      }
+
+      {:ok, _, _, state} = EctoLibSql.handle_execute(create_table, [], [], state)
+
+      # Execute batch of statements
+      statements = [
+        {"INSERT INTO batch_test (value) VALUES (?)", ["first"]},
+        {"INSERT INTO batch_test (value) VALUES (?)", ["second"]},
+        {"INSERT INTO batch_test (value) VALUES (?)", ["third"]},
+        {"SELECT COUNT(*) FROM batch_test", []}
+      ]
+
+      {:ok, results} = EctoLibSql.Native.batch(state, statements)
+
+      # Should have 4 results (3 inserts + 1 select)
+      assert length(results) == 4
+
+      # Last result should be the count query
+      count_result = List.last(results)
+      # Extract the actual count value from the result rows
+      [[count]] = count_result.rows
+      assert count == 3
+
+      EctoLibSql.disconnect([], state)
+    end
+
+    test "batch operations - transactional atomicity with floats", %{database: database} do
+      {:ok, state} = EctoLibSql.connect(database: database)
+
+      # Create table with REAL balance (floats now supported!)
+      create_table = %EctoLibSql.Query{
+        statement: "CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY, balance REAL)"
+      }
+
+      {:ok, _, _, state} = EctoLibSql.handle_execute(create_table, [], [], state)
+
+      # Insert initial account with float
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO accounts (id, balance) VALUES (?, ?)",
+          [1, 100.50],
+          [],
+          state
+        )
+
+      # This batch should fail on the constraint violation and rollback everything
+      statements = [
+        {"UPDATE accounts SET balance = balance - 25.25 WHERE id = ?", [1]},
+        # Duplicate key - will fail
+        {"INSERT INTO accounts (id, balance) VALUES (?, ?)", [1, 50.00]}
+      ]
+
+      # Should return error
+      assert {:error, _} = EctoLibSql.Native.batch_transactional(state, statements)
+
+      # Verify balance wasn't changed (rollback worked)
+      {:ok, _, result, _} =
+        EctoLibSql.handle_execute(
+          "SELECT balance FROM accounts WHERE id = ?",
+          [1],
+          [],
+          state
+        )
+
+      [[balance]] = result.rows
+      assert balance == 100.50
+
+      EctoLibSql.disconnect([], state)
+    end
+
+    test "batch with mixed operations", %{database: database} do
+      {:ok, state} = EctoLibSql.connect(database: database)
+
+      # Create table
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "CREATE TABLE IF NOT EXISTS mixed_batch (id INTEGER PRIMARY KEY, val TEXT)",
+          [],
+          [],
+          state
+        )
+
+      # Execute batch with inserts, updates, and selects
+      statements = [
+        {"INSERT INTO mixed_batch (id, val) VALUES (?, ?)", [1, "alpha"]},
+        {"INSERT INTO mixed_batch (id, val) VALUES (?, ?)", [2, "beta"]},
+        {"UPDATE mixed_batch SET val = ? WHERE id = ?", ["gamma", 1]},
+        {"SELECT val FROM mixed_batch WHERE id = ?", [1]},
+        {"DELETE FROM mixed_batch WHERE id = ?", [2]},
+        {"SELECT COUNT(*) FROM mixed_batch", []}
+      ]
+
+      {:ok, results} = EctoLibSql.Native.batch_transactional(state, statements)
+
+      # Should get results for all statements
+      assert length(results) == 6
+
+      # Fourth result should be the select showing "gamma"
+      select_result = Enum.at(results, 3)
+      assert select_result.rows == [["gamma"]]
+
+      # Last result should show count of 1 (one deleted)
+      count_result = List.last(results)
+      [[count]] = count_result.rows
+      assert count == 1
+
+      EctoLibSql.disconnect([], state)
+    end
+
+    test "large result set handling with batch insert", %{database: database} do
+      {:ok, state} = EctoLibSql.connect(database: database)
+
+      # Create table
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "CREATE TABLE IF NOT EXISTS large_test (id INTEGER PRIMARY KEY, category TEXT, value INTEGER)",
+          [],
+          [],
+          state
+        )
+
+      # Insert many rows using batch
+      insert_statements =
+        for i <- 1..100 do
+          category = if rem(i, 2) == 0, do: "even", else: "odd"
+          {"INSERT INTO large_test (id, category, value) VALUES (?, ?, ?)", [i, category, i * 10]}
+        end
+
+      {:ok, _} = EctoLibSql.Native.batch(state, insert_statements)
+
+      # Query with filter
+      {:ok, _, result, _} =
+        EctoLibSql.handle_execute(
+          "SELECT COUNT(*) FROM large_test WHERE category = ?",
+          ["even"],
+          [],
+          state
+        )
+
+      [[count]] = result.rows
+      assert count == 50
 
       EctoLibSql.disconnect([], state)
     end

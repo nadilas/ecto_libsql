@@ -12,7 +12,7 @@ defmodule EctoLibSql.SecurityTest do
   setup do
     # Create unique test database
     unique_id = :erlang.unique_integer([:positive])
-    db_path = "test_security_#{unique_id}.db"
+    db_path = "z_ecto_libsql_test-security_#{unique_id}.db"
 
     {:ok, state} = EctoLibSql.connect(database: db_path)
 
@@ -409,8 +409,8 @@ defmodule EctoLibSql.SecurityTest do
       unique_id1 = :erlang.unique_integer([:positive])
       unique_id2 = :erlang.unique_integer([:positive])
 
-      db_path1 = "test_isolation1_#{unique_id1}.db"
-      db_path2 = "test_isolation2_#{unique_id2}.db"
+      db_path1 = "z_ecto_libsql_test-isolation1_#{unique_id1}.db"
+      db_path2 = "z_ecto_libsql_test-isolation2_#{unique_id2}.db"
 
       {:ok, state1} = EctoLibSql.connect(database: db_path1)
       {:ok, state2} = EctoLibSql.connect(database: db_path2)

@@ -3,7 +3,7 @@ defmodule Ecto.Adapters.LibSqlTest do
 
   alias Ecto.Adapters.LibSql
 
-  @test_db "test_ecto_adapter.db"
+  @test_db "z_ecto_libsql_test-ecto_adapter.db"
 
   setup do
     # Clean up any existing test database

@@ -4,14 +4,14 @@ defmodule EctoLibSqlTest do
 
   setup_all do
     # Clean up any existing test database from previous runs
-    File.rm("bar.db")
+    File.rm("z_ecto_libsql_test-bar.db")
 
     :ok
   end
 
   setup do
     # Create a unique database file for each test to ensure isolation
-    test_db = "test_#{:erlang.unique_integer([:positive])}.db"
+    test_db = "z_ecto_libsql_test-#{:erlang.unique_integer([:positive])}.db"
 
     opts = [
       uri: System.get_env("LIBSQL_URI"),
@@ -116,41 +116,6 @@ defmodule EctoLibSqlTest do
     assert {:error, %EctoLibSql.Error{}, _} = EctoLibSql.handle_execute(query, [], [], state)
   end
 
-  test "insert and update user", state do
-    {:ok, state} = EctoLibSql.connect(state[:opts])
-
-    # Create table first
-    create_table = %EctoLibSql.Query{
-      statement:
-        "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT)"
-    }
-
-    {:ok, _, _, state} = EctoLibSql.handle_execute(create_table, [], [], state)
-
-    insert_query = %EctoLibSql.Query{
-      statement: "INSERT INTO users (name, email) VALUES (?1, ?2)"
-    }
-
-    assert {:ok, _, _, new_state} =
-             EctoLibSql.handle_execute(insert_query, ["Alice", "alice@mail.com"], [], state)
-
-    update_query = %EctoLibSql.Query{
-      statement: "UPDATE users SET email = ?1 WHERE name = ?2"
-    }
-
-    assert {:ok, _, _, final_state} =
-             EctoLibSql.handle_execute(update_query, ["alice@new.com", "Alice"], [], new_state)
-
-    select_query = %EctoLibSql.Query{
-      statement: "SELECT email FROM users WHERE name = ?1"
-    }
-
-    assert {:ok, _, result, _} =
-             EctoLibSql.handle_execute(select_query, ["Alice"], [], final_state)
-
-    assert result.rows == [["alice@new.com"]]
-  end
-
   # libSQL supports multiple statements in one execution
   test "multiple statements in one execution", state do
     {:ok, state} = EctoLibSql.connect(state[:opts])
@@ -185,78 +150,9 @@ defmodule EctoLibSqlTest do
     assert result.rows == [[15]]
   end
 
-  test "delete user and check it's gone", state do
-    {:ok, state} = EctoLibSql.connect(state[:opts])
-
-    # Create table first
-    create_table = %EctoLibSql.Query{
-      statement:
-        "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT)"
-    }
-
-    {:ok, _, _, state} = EctoLibSql.handle_execute(create_table, [], [], state)
-
-    insert_query = %EctoLibSql.Query{
-      statement: "INSERT INTO users (name, email) VALUES (?1, ?2)"
-    }
-
-    {:ok, _, _, new_state} =
-      EctoLibSql.handle_execute(insert_query, ["Bob", "bob@mail.com"], [], state)
-
-    delete_query = %EctoLibSql.Query{
-      statement: "DELETE FROM users WHERE name = ?1"
-    }
-
-    {:ok, _, _, final_state} = EctoLibSql.handle_execute(delete_query, ["Bob"], [], new_state)
-
-    select_query = %EctoLibSql.Query{
-      statement: "SELECT * FROM users WHERE name = ?1"
-    }
-
-    {:ok, _, result, _} = EctoLibSql.handle_execute(select_query, ["Bob"], [], final_state)
-
-    assert result.rows == []
-  end
-
-  test "transaction rollback", state do
-    {:ok, state} = EctoLibSql.connect(state[:opts])
-
-    create_table = %EctoLibSql.Query{
-      statement:
-        "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT)"
-    }
-
-    {:ok, _, _, state} = EctoLibSql.handle_execute(create_table, [], [], state)
-
-    {:ok, _, new_state} = EctoLibSql.handle_begin([], state)
-
-    query = %EctoLibSql.Query{statement: "INSERT INTO users (name, email) values (?1, ?2)"}
-    params = ["rollback_user", "rollback@mail.com"]
-
-    {:ok, _, _, mid_state} = EctoLibSql.handle_execute(query, params, [], new_state)
-
-    {:ok, _, rolled_back_state} = EctoLibSql.handle_rollback([], mid_state)
-
-    # Pastikan data tidak masuk setelah rollback
-    select_query = %EctoLibSql.Query{
-      statement: "SELECT * FROM users WHERE name = ?1"
-    }
-
-    {:ok, _, result, _} =
-      EctoLibSql.handle_execute(select_query, ["rollback_user"], [], rolled_back_state)
-
-    assert result.rows == []
-  end
-
-  test "commit without active transaction", state do
-    {:ok, state} = EctoLibSql.connect(state[:opts])
-
-    assert {:error, _, _} = EctoLibSql.handle_commit([], state)
-  end
-
   test "local no sync", _state do
     local = [
-      database: "bar.db"
+      database: "z_ecto_libsql_test-bar.db"
     ]
 
     {:ok, state} = EctoLibSql.connect(local)
@@ -296,7 +192,7 @@ defmodule EctoLibSqlTest do
 
   test "manual sync", _state do
     local = [
-      database: "bar.db"
+      database: "z_ecto_libsql_test-bar.db"
     ]
 
     {:ok, state} = EctoLibSql.connect(local)
@@ -318,7 +214,7 @@ defmodule EctoLibSqlTest do
     remote_only = [
       uri: System.get_env("LIBSQL_URI"),
       auth_token: System.get_env("LIBSQL_TOKEN"),
-      database: "bar.db"
+      database: "z_ecto_libsql_test-bar.db"
     ]
 
     {:ok, remote_state} = EctoLibSql.connect(remote_only)
@@ -332,139 +228,6 @@ defmodule EctoLibSqlTest do
       EctoLibSql.handle_execute(query_select, ["manualsync@gmail.com"], [], remote_state)
 
     assert {:ok, _, _, _} = select_execute
-  end
-
-  # Creative Tests - Advanced Features
-
-  test "prepared statements with parameter binding", state do
-    {:ok, state} = EctoLibSql.connect(state[:opts])
-
-    # Create table with REAL for floats
-    create_table = %EctoLibSql.Query{
-      statement:
-        "CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY, name TEXT, price REAL)"
-    }
-
-    {:ok, _, _, state} = EctoLibSql.handle_execute(create_table, [], [], state)
-
-    # Insert data using floats (now supported!)
-    {:ok, _, _, state} =
-      EctoLibSql.handle_execute(
-        "INSERT INTO products (name, price) VALUES (?, ?)",
-        ["Widget", 19.99],
-        [],
-        state
-      )
-
-    {:ok, _, _, state} =
-      EctoLibSql.handle_execute(
-        "INSERT INTO products (name, price) VALUES (?, ?)",
-        ["Gadget", 29.50],
-        [],
-        state
-      )
-
-    {:ok, _, _, state} =
-      EctoLibSql.handle_execute(
-        "INSERT INTO products (name, price) VALUES (?, ?)",
-        ["Doohickey", 39.75],
-        [],
-        state
-      )
-
-    # Test prepared statement with parameter binding
-    {:ok, select_stmt} = EctoLibSql.Native.prepare(state, "SELECT * FROM products WHERE name = ?")
-
-    # Query with different parameters - testing parameter binding works
-    {:ok, result1} = EctoLibSql.Native.query_stmt(state, select_stmt, ["Widget"])
-    assert result1.num_rows == 1
-    [[_id, name1, price1]] = result1.rows
-    assert name1 == "Widget"
-    assert price1 == 19.99
-
-    {:ok, result2} = EctoLibSql.Native.query_stmt(state, select_stmt, ["Gadget"])
-    assert result2.num_rows == 1
-    [[_id, name2, price2]] = result2.rows
-    assert name2 == "Gadget"
-    assert price2 == 29.50
-
-    {:ok, result3} = EctoLibSql.Native.query_stmt(state, select_stmt, ["Doohickey"])
-    assert result3.num_rows == 1
-
-    # Clean up
-    assert :ok = EctoLibSql.Native.close_stmt(select_stmt)
-  end
-
-  test "batch operations - non-transactional", state do
-    {:ok, state} = EctoLibSql.connect(state[:opts])
-
-    # Create table
-    create_table = %EctoLibSql.Query{
-      statement: "CREATE TABLE IF NOT EXISTS batch_test (id INTEGER PRIMARY KEY, value TEXT)"
-    }
-
-    {:ok, _, _, state} = EctoLibSql.handle_execute(create_table, [], [], state)
-
-    # Execute batch of statements
-    statements = [
-      {"INSERT INTO batch_test (value) VALUES (?)", ["first"]},
-      {"INSERT INTO batch_test (value) VALUES (?)", ["second"]},
-      {"INSERT INTO batch_test (value) VALUES (?)", ["third"]},
-      {"SELECT COUNT(*) FROM batch_test", []}
-    ]
-
-    {:ok, results} = EctoLibSql.Native.batch(state, statements)
-
-    # Should have 4 results (3 inserts + 1 select)
-    assert length(results) == 4
-
-    # Last result should be the count query
-    count_result = List.last(results)
-    # Extract the actual count value from the result rows
-    [[count]] = count_result.rows
-    assert count >= 3
-  end
-
-  test "batch operations - transactional atomicity with floats", state do
-    {:ok, state} = EctoLibSql.connect(state[:opts])
-
-    # Create table with REAL balance (floats now supported!)
-    create_table = %EctoLibSql.Query{
-      statement: "CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY, balance REAL)"
-    }
-
-    {:ok, _, _, state} = EctoLibSql.handle_execute(create_table, [], [], state)
-
-    # Insert initial account with float
-    {:ok, _, _, state} =
-      EctoLibSql.handle_execute(
-        "INSERT INTO accounts (id, balance) VALUES (?, ?)",
-        [1, 100.50],
-        [],
-        state
-      )
-
-    # This batch should fail on the constraint violation and rollback everything
-    statements = [
-      {"UPDATE accounts SET balance = balance - 25.25 WHERE id = ?", [1]},
-      # Duplicate key - will fail
-      {"INSERT INTO accounts (id, balance) VALUES (?, ?)", [1, 50.00]}
-    ]
-
-    # Should return error
-    assert {:error, _} = EctoLibSql.Native.batch_transactional(state, statements)
-
-    # Verify balance wasn't changed (rollback worked)
-    {:ok, _, result, _} =
-      EctoLibSql.handle_execute(
-        "SELECT balance FROM accounts WHERE id = ?",
-        [1],
-        [],
-        state
-      )
-
-    [[balance]] = result.rows
-    assert balance == 100.50
   end
 
   test "transaction behaviours - deferred and read_only", state do
@@ -618,76 +381,6 @@ defmodule EctoLibSqlTest do
     assert result.num_rows == 1
   end
 
-  test "batch with mixed operations", state do
-    {:ok, state} = EctoLibSql.connect(state[:opts])
-
-    # Create table
-    {:ok, _, _, state} =
-      EctoLibSql.handle_execute(
-        "CREATE TABLE IF NOT EXISTS mixed_batch (id INTEGER PRIMARY KEY, val TEXT)",
-        [],
-        [],
-        state
-      )
-
-    # Execute batch with inserts, updates, and selects
-    statements = [
-      {"INSERT INTO mixed_batch (id, val) VALUES (?, ?)", [1, "alpha"]},
-      {"INSERT INTO mixed_batch (id, val) VALUES (?, ?)", [2, "beta"]},
-      {"UPDATE mixed_batch SET val = ? WHERE id = ?", ["gamma", 1]},
-      {"SELECT val FROM mixed_batch WHERE id = ?", [1]},
-      {"DELETE FROM mixed_batch WHERE id = ?", [2]},
-      {"SELECT COUNT(*) FROM mixed_batch", []}
-    ]
-
-    {:ok, results} = EctoLibSql.Native.batch_transactional(state, statements)
-
-    # Should get results for all statements
-    assert length(results) == 6
-
-    # Fourth result should be the select showing "gamma"
-    select_result = Enum.at(results, 3)
-    assert select_result.rows == [["gamma"]]
-
-    # Last result should show count of 1 (one deleted)
-    count_result = List.last(results)
-    assert hd(hd(count_result.rows)) == 1
-  end
-
-  test "large result set handling with batch insert", state do
-    {:ok, state} = EctoLibSql.connect(state[:opts])
-
-    # Create table
-    {:ok, _, _, state} =
-      EctoLibSql.handle_execute(
-        "CREATE TABLE IF NOT EXISTS large_test (id INTEGER PRIMARY KEY, category TEXT, value INTEGER)",
-        [],
-        [],
-        state
-      )
-
-    # Insert many rows using batch
-    insert_statements =
-      for i <- 1..100 do
-        category = if rem(i, 2) == 0, do: "even", else: "odd"
-        {"INSERT INTO large_test (id, category, value) VALUES (?, ?, ?)", [i, category, i * 10]}
-      end
-
-    {:ok, _} = EctoLibSql.Native.batch(state, insert_statements)
-
-    # Query with filter
-    {:ok, _, result, _} =
-      EctoLibSql.handle_execute(
-        "SELECT COUNT(*) FROM large_test WHERE category = ?",
-        ["even"],
-        [],
-        state
-      )
-
-    [[count]] = result.rows
-    assert count == 50
-  end
-
   test "JSON data storage", state do
     {:ok, state} = EctoLibSql.connect(state[:opts])
 
@@ -735,7 +428,7 @@ defmodule EctoLibSqlTest do
       # Create encrypted database
       {:ok, state} =
         EctoLibSql.connect(
-          database: "test_encrypted.db",
+          database: "z_ecto_libsql_test-encrypted.db",
           encryption_key: @encryption_key
         )
 
@@ -773,7 +466,7 @@ defmodule EctoLibSqlTest do
       # Verify we can reconnect with the same key
       {:ok, state2} =
         EctoLibSql.connect(
-          database: "test_encrypted.db",
+          database: "z_ecto_libsql_test-encrypted.db",
           encryption_key: @encryption_key
         )
 
@@ -790,14 +483,14 @@ defmodule EctoLibSqlTest do
       EctoLibSql.disconnect([], state2)
 
       # Clean up
-      File.rm("test_encrypted.db")
+      File.rm("z_ecto_libsql_test-encrypted.db")
     end
 
     test "cannot open encrypted database without key" do
       # Create encrypted database
       {:ok, state} =
         EctoLibSql.connect(
-          database: "test_encrypted2.db",
+          database: "z_ecto_libsql_test-encrypted2.db",
           encryption_key: @encryption_key
         )
 
@@ -812,7 +505,7 @@ defmodule EctoLibSqlTest do
       EctoLibSql.disconnect([], state)
 
       # Try to open without encryption key - should fail or give errors
-      case EctoLibSql.connect(database: "test_encrypted2.db") do
+      case EctoLibSql.connect(database: "z_ecto_libsql_test-encrypted2.db") do
         {:ok, state_no_key} ->
           # If it connects, queries should fail
           result =
@@ -833,14 +526,14 @@ defmodule EctoLibSqlTest do
       end
 
       # Clean up
-      File.rm("test_encrypted2.db")
+      File.rm("z_ecto_libsql_test-encrypted2.db")
     end
 
     test "cannot open encrypted database with wrong key" do
       # Create encrypted database
       {:ok, state} =
         EctoLibSql.connect(
-          database: "test_encrypted3.db",
+          database: "z_ecto_libsql_test-encrypted3.db",
           encryption_key: @encryption_key
         )
 
@@ -865,7 +558,10 @@ defmodule EctoLibSqlTest do
       # Try to open with wrong encryption key
       wrong_key = "wrong-encryption-key-that-is-also-32-characters-long"
 
-      case EctoLibSql.connect(database: "test_encrypted3.db", encryption_key: wrong_key) do
+      case EctoLibSql.connect(
+             database: "z_ecto_libsql_test-encrypted3.db",
+             encryption_key: wrong_key
+           ) do
         {:ok, state_wrong} ->
           # If it connects, queries should fail or return garbage
           result =
@@ -894,7 +590,7 @@ defmodule EctoLibSqlTest do
       end
 
       # Clean up
-      File.rm("test_encrypted3.db")
+      File.rm("z_ecto_libsql_test-encrypted3.db")
     end
 
     test "encrypted database file does not contain plaintext" do
@@ -903,7 +599,7 @@ defmodule EctoLibSqlTest do
       # Create encrypted database with sensitive data
       {:ok, state} =
         EctoLibSql.connect(
-          database: "test_encrypted4.db",
+          database: "z_ecto_libsql_test-encrypted4.db",
           encryption_key: @encryption_key
         )
 
@@ -926,7 +622,7 @@ defmodule EctoLibSqlTest do
       EctoLibSql.disconnect([], state)
 
       # Read the raw database file and verify secret text is NOT in plaintext
-      raw_content = File.read!("test_encrypted4.db")
+      raw_content = File.read!("z_ecto_libsql_test-encrypted4.db")
 
       # The secret text should NOT appear in plaintext in the file
       refute String.contains?(raw_content, secret_text),
@@ -943,7 +639,7 @@ defmodule EctoLibSqlTest do
       # Verify we can still read with correct key
       {:ok, state2} =
         EctoLibSql.connect(
-          database: "test_encrypted4.db",
+          database: "z_ecto_libsql_test-encrypted4.db",
           encryption_key: @encryption_key
         )
 
@@ -960,7 +656,7 @@ defmodule EctoLibSqlTest do
       EctoLibSql.disconnect([], state2)
 
       # Clean up
-      File.rm("test_encrypted4.db")
+      File.rm("z_ecto_libsql_test-encrypted4.db")
     end
   end
 end

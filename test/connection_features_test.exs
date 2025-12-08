@@ -8,7 +8,7 @@ defmodule EctoLibSql.ConnectionFeaturesTest do
   use ExUnit.Case
 
   setup do
-    test_db = "test_conn_features_#{:erlang.unique_integer([:positive])}.db"
+    test_db = "z_ecto_libsql_test-conn_features_#{:erlang.unique_integer([:positive])}.db"
 
     on_exit(fn ->
       File.rm(test_db)

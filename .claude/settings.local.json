@@ -28,7 +28,8 @@
       "WebFetch(domain:docs.rs)",
       "Bash(grep:*)",
       "Bash(gh pr view:*)",
-      "Bash(cargo clippy:*)"
+      "Bash(cargo clippy:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

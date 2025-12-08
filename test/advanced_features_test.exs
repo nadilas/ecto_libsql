@@ -44,7 +44,7 @@ defmodule EctoLibSql.AdvancedFeaturesTest do
 
     test "max_write_replication_index after write operations" do
       # Create a temporary database file
-      db_path = "test_max_write_#{:erlang.unique_integer([:positive])}.db"
+      db_path = "z_ecto_libsql_test-max_write_#{:erlang.unique_integer([:positive])}.db"
 
       {:ok, state} = EctoLibSql.connect(database: db_path)
 

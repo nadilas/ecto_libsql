@@ -4,7 +4,7 @@ defmodule EctoLibSql.PragmaTest do
   alias EctoLibSql.Pragma
 
   setup do
-    test_db = "test_pragma_#{:erlang.unique_integer([:positive])}.db"
+    test_db = "z_ecto_libsql_test-pragma_#{:erlang.unique_integer([:positive])}.db"
 
     {:ok, state} = EctoLibSql.connect(database: test_db)
 
@@ -255,7 +255,7 @@ defmodule EctoLibSql.PragmaTest do
 
     test "PRAGMA settings are per-connection", %{state: state1} do
       # Create a second connection
-      test_db2 = "test_pragma_second_#{:erlang.unique_integer([:positive])}.db"
+      test_db2 = "z_ecto_libsql_test-pragma_second_#{:erlang.unique_integer([:positive])}.db"
       {:ok, state2} = EctoLibSql.connect(database: test_db2)
 
       # Explicitly set foreign keys differently on each connection

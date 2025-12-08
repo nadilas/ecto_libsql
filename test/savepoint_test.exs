@@ -24,7 +24,7 @@ defmodule EctoLibSql.SavepointTest do
 
   setup do
     # Create unique database file for this test
-    db_file = "test_savepoint_#{:erlang.unique_integer([:positive])}.db"
+    db_file = "z_ecto_libsql_test-savepoint_#{:erlang.unique_integer([:positive])}.db"
 
     conn_id = Native.connect([database: db_file], :local)
     state = %State{conn_id: conn_id, mode: :local, sync: :disable_sync}
