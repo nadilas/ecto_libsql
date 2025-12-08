@@ -10,11 +10,13 @@ defmodule EctoLibSql.BatchFeaturesTest do
   setup do
     test_db = "z_ecto_libsql_test-batch_#{:erlang.unique_integer([:positive])}.db"
 
+    opts = [database: test_db]
+
     on_exit(fn ->
       File.rm(test_db)
     end)
 
-    {:ok, database: test_db}
+    {:ok, database: test_db, opts: opts}
   end
 
   describe "native batch execution (SQL string)" do
