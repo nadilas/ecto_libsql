@@ -57,7 +57,7 @@ defmodule Ecto.Integration.EctoLibSqlTest do
     end
   end
 
-  @test_db "test_ecto_integration.db"
+  @test_db "z_ecto_libsql_test-ecto_integration.db"
 
   setup_all do
     # Start the test repo

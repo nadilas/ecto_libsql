@@ -11,7 +11,7 @@ defmodule EctoLibSql.StatementCachingBenchmarkTest do
   end
 
   setup do
-    db_file = "test_stmt_cache_#{:erlang.unique_integer([:positive])}.db"
+    db_file = "z_ecto_libsql_test-stmt_cache_#{:erlang.unique_integer([:positive])}.db"
 
     conn_id = Native.connect([database: db_file], :local)
 

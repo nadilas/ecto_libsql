@@ -182,7 +182,7 @@ defmodule EctoLibSql.ErrorHandlingTest do
       # and cascading to VM crash
 
       # Create a real connection for some tasks
-      test_db = "test_concurrent_#{:erlang.unique_integer([:positive])}.db"
+      test_db = "z_ecto_libsql_test-concurrent_#{:erlang.unique_integer([:positive])}.db"
       opts = [database: test_db, sync: false]
       {:ok, state} = EctoLibSql.connect(opts)
       real_conn_id = state.conn_id

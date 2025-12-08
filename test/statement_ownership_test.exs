@@ -5,8 +5,8 @@ defmodule EctoLibSql.StatementOwnershipTest do
   alias EctoLibSql.State
 
   setup do
-    db_file1 = "test_stmt_own_#{:erlang.unique_integer([:positive])}_1.db"
-    db_file2 = "test_stmt_own_#{:erlang.unique_integer([:positive])}_2.db"
+    db_file1 = "z_ecto_libsql_test-stmt_own_#{:erlang.unique_integer([:positive])}_1.db"
+    db_file2 = "z_ecto_libsql_test-stmt_own_#{:erlang.unique_integer([:positive])}_2.db"
 
     conn_id1 = Native.connect([database: db_file1], :local)
     conn_id2 = Native.connect([database: db_file2], :local)

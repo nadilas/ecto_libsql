@@ -13,7 +13,7 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
 
   setup do
     # Start a fresh repo for each test with a unique database file.
-    test_db = "test_migrations_#{:erlang.unique_integer([:positive])}.db"
+    test_db = "z_ecto_libsql_test-migrations_#{:erlang.unique_integer([:positive])}.db"
     {:ok, _} = start_supervised({TestRepo, database: test_db})
 
     on_exit(fn ->

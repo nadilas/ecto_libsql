@@ -111,7 +111,7 @@ mod integration_tests {
     use super::*;
 
     fn setup_test_db() -> String {
-        format!("test_{}.db", Uuid::new_v4())
+        format!("z_ecto_libsql_test-{}.db", Uuid::new_v4())
     }
 
     fn cleanup_test_db(db_path: &str) {

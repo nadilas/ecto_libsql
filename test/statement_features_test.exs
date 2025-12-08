@@ -11,7 +11,7 @@ defmodule EctoLibSql.StatementFeaturesTest do
   use ExUnit.Case
 
   setup do
-    test_db = "test_stmt_#{:erlang.unique_integer([:positive])}.db"
+    test_db = "z_ecto_libsql_test-stmt_#{:erlang.unique_integer([:positive])}.db"
 
     {:ok, state} = EctoLibSql.connect(database: test_db)
 
