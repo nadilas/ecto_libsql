@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Prepared Statement Caching with Reset** ✅ (Dec 5, 2025)
+- **Prepared Statement Caching with Reset**
   - Implemented true statement caching: statements are prepared once and reused with `.reset()` for binding cleanup
   - Changed `STMT_REGISTRY` from storing SQL text to caching actual `Arc<Mutex<Statement>>` objects
   - `prepare_statement/2` now immediately prepares statements (catches SQL errors early)
@@ -19,16 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Eliminates 30-50% performance overhead from repeated statement re-preparation
   - **Impact**: Significant performance improvement for prepared statement workloads (~10-15x faster for cached queries)
   - **Backward compatible**: API unchanged, behavior improved (eager validation better than deferred)
-  - All 289 tests passing (0 failures)
 
-- **Statement Caching Benchmark Test** ✅ (Dec 5, 2025)
+- **Statement Caching Benchmark Test**
   - Added `test/stmt_caching_benchmark_test.exs` with comprehensive caching tests
   - Verified 100 cached executions complete in ~33ms (~330µs per execution)
   - Confirmed bindings clear correctly between executions
   - Tested multiple independent cached statements
   - Demonstrated consistent performance across multiple prepared statements
 
-- **Full Transaction Ownership & Savepoint Connection Context** ✅ (Dec 5, 2025)
+- **Full Transaction Ownership & Savepoint Connection Context**
   - Implemented complete transaction-to-connection mapping with `TransactionEntry` struct
   - `TXN_REGISTRY` now tracks `conn_id` for each transaction, enabling ownership validation
   - Updated `begin_transaction/1` and `begin_transaction_with_behavior/2` to store connection owner with transaction
@@ -83,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `stmt_column_name/3` - Get column name by index (0-based)
   - `stmt_parameter_count/2` - Get number of parameters (?) in a prepared statement
   - Enables dynamic schema discovery and parameter binding validation
-  - Added 21 comprehensive tests in `test/prepared_statement_test.exs` (312 lines)
+  - Added 21 comprehensive tests in `test/prepared_statement_test.exs`
 
 - **Savepoint Support (Nested Transactions)**
   - `create_savepoint/2` - Create a named savepoint within a transaction
@@ -91,38 +90,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `rollback_to_savepoint_by_name/2` - Rollback to a savepoint, keeping transaction active
   - Enables nested transaction-like behaviour within a single transaction
   - Perfect for error recovery and partial rollback patterns
-  - Added 18 comprehensive tests in `test/savepoint_test.exs` (490 lines)
+  - Added 18 comprehensive tests in `test/savepoint_test.exs`
 
 - **Test Suite Reorganisation**
   - Restructured tests from "missing vs implemented" to feature-based organisation
   - New feature-focused test files:
-    - `test/connection_features_test.exs` (151 lines, 6 tests) - busy_timeout, reset, interrupt
-    - `test/batch_features_test.exs` (104 lines, 3 tests) - batch execution
-    - `test/pragma_test.exs` (278 lines, 19 tests) - PRAGMA operations
-    - `test/statement_features_test.exs` (305 lines, 11 tests) - prepared statement features (mostly skipped, awaiting implementation)
-    - `test/advanced_features_test.exs` (282 lines, 13 tests) - MVCC, cacheflush, replication, extensions, hooks (all skipped, awaiting implementation)
-  - Removed old organisational test files (`test/phase1_features_test.exs`, `test/turso_missing_features_test.exs`)
+    - `test/connection_features_test.exs` (6 tests) - busy_timeout, reset, interrupt
+    - `test/batch_features_test.exs` (6 tests) - batch execution
+    - `test/pragma_test.exs` (19 tests) - PRAGMA operations
+    - `test/statement_features_test.exs` (11 tests) - prepared statement features (mostly skipped, awaiting implementation)
+    - `test/advanced_features_test.exs` (13 tests) - MVCC, cacheflush, replication, extensions, hooks (all skipped, awaiting implementation)
   - All unimplemented features properly marked with `@describetag :skip` for easy enabling as features are added
 
 - **Comprehensive Documentation Suite**
-  - `TURSO_COMPREHENSIVE_GAP_ANALYSIS.md` (805 lines) - Consolidated analysis of all Turso/LibSQL features
-  - `IMPLEMENTATION_ROADMAP_FOCUSED.md` (855 lines) - Detailed implementation roadmap with prioritised phases
-  - `LIBSQL_FEATURE_MATRIX_FINAL.md` (764 lines) - Complete feature compatibility matrix
-  - `TESTING_PLAN_COMPREHENSIVE.md` (1038 lines) - Comprehensive testing strategy and coverage plan
+  - `TURSO_COMPREHENSIVE_GAP_ANALYSIS.md` - Consolidated analysis of all Turso/LibSQL features
+  - `IMPLEMENTATION_ROADMAP_FOCUSED.md` - Detailed implementation roadmap with prioritised phases
+  - `LIBSQL_FEATURE_MATRIX_FINAL.md` - Complete feature compatibility matrix
+  - `TESTING_PLAN_COMPREHENSIVE.md` - Comprehensive testing strategy and coverage plan
   - Merged multiple gap analysis documents into consolidated, authoritative sources
-  - Prioritised feature list (P0-P3) with clear implementation phases
   - Complete source code references and Ecto integration details
 
 ### Changed
 
-- **LibSQL 0.9.29 API Verification** (Dec 4, 2025)
+- **LibSQL 0.9.29 API Verification**
   - Verified all replication NIFs use correct libsql 0.9.29 APIs
   - `get_frame_number/1` confirmed using `db.replication_index()` (not legacy methods)
   - `sync_until/2` confirmed using `db.sync_until()`
   - `flush_replicator/1` confirmed using `db.flush_replicator()`
-  - All implementations verified correct and production-ready
+  - All implementations verified correct
+
+- **Test Suite Improvements**
+  - Removed duplicated tests to improve maintainability
+  - Standardized test database naming conventions across all test files
+  - Improved test assertions for better clarity and debugging
+  - Added explicit disconnect calls to match test patterns
+  - Enabled previously skipped tests for now-implemented features
+  - Fixed test setup issues and race conditions
+  - Performance test adjustments for slower CI machines
+
+- **Transaction Ownership Helper Functions**
+  - Added `verify_transaction_ownership/2` helper function to reduce code duplication
+  - Simplified ownership validation logic across all transaction operations
+  - Consolidated lock scope handling for transaction registry operations
+  - Improved code maintainability and consistency
+
+- **Replica Function API Improvements**
+  - Added state-accepting overloads for replica functions for better ergonomics
+  - Fixed inconsistent `flush_replicator` behavior to always use 30-second timeout
+  - Improved error messages for replica operations
 
 ### Fixed
+
+- **Security: SQL Injection Prevention**
+  - Fixed potential SQL injection vulnerability in savepoint name validation
+  - Added strict alphanumeric validation for savepoint identifiers
+  - Prevents malicious SQL in nested transaction operations
+
+- **Security: Prepared Statement Validation**
+  - Fixed security issue in prepared statement parameter validation
+  - Enhanced parameter binding checks to prevent malformed queries
 
 - **Remote Test Stability**
   - Fixed vector operations test to properly drop existing tables before recreation
