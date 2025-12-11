@@ -9,10 +9,10 @@ defmodule ManualDeleteGetTest do
     use Ecto.Schema
 
     schema "manual_test_users" do
-      field :name, :string
-      field :email, :string
-      field :age, :integer
-      field :active, :boolean, default: true
+      field(:name, :string)
+      field(:email, :string)
+      field(:age, :integer)
+      field(:active, :boolean, default: true)
     end
   end
 
