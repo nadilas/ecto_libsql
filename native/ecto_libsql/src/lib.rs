@@ -596,8 +596,6 @@ fn query_args<'a>(
 ) -> NifResult<Term<'a>> {
     let conn_map = safe_lock(&CONNECTION_REGISTRY, "query_args conn_map")?;
 
-    let _is_sync = !matches!(detect_query_type(query), QueryType::Select);
-
     if let Some(client) = conn_map.get(conn_id) {
         let client = client.clone();
 
@@ -1022,20 +1020,48 @@ fn execute_transactional_batch<'a>(
 
             // Execute each statement in the transaction
             for (sql, args) in batch_stmts.iter() {
-                match trx.query(sql, args.clone()).await {
-                    Ok(rows) => {
-                        let collected = collect_rows(env, rows)
-                            .await
-                            .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
-                        all_results.push(collected);
+                // Determine whether to use query() or execute()
+                let use_query = should_use_query(sql);
+
+                if use_query {
+                    // Statements that return rows (SELECT, or INSERT/UPDATE/DELETE with RETURNING)
+                    match trx.query(sql, args.clone()).await {
+                        Ok(rows) => {
+                            let collected = collect_rows(env, rows)
+                                .await
+                                .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
+                            all_results.push(collected);
+                        }
+                        Err(e) => {
+                            // Rollback on error
+                            let _ = trx.rollback().await;
+                            return Err(rustler::Error::Term(Box::new(format!(
+                                "Batch statement error: {}",
+                                e
+                            ))));
+                        }
                     }
-                    Err(e) => {
-                        // Rollback on error
-                        let _ = trx.rollback().await;
-                        return Err(rustler::Error::Term(Box::new(format!(
-                            "Batch statement error: {}",
-                            e
-                        ))));
+                } else {
+                    // Statements that don't return rows (INSERT/UPDATE/DELETE without RETURNING)
+                    match trx.execute(sql, args.clone()).await {
+                        Ok(rows_affected) => {
+                            // Return result map matching collect_rows format
+                            let empty_columns: Vec<Term> = Vec::new();
+                            let empty_rows: Vec<Term> = Vec::new();
+                            let mut result_map: HashMap<String, Term<'a>> = HashMap::new();
+                            result_map.insert("columns".to_string(), empty_columns.encode(env));
+                            result_map.insert("rows".to_string(), empty_rows.encode(env));
+                            result_map.insert("num_rows".to_string(), rows_affected.encode(env));
+                            all_results.push(result_map.encode(env));
+                        }
+                        Err(e) => {
+                            // Rollback on error
+                            let _ = trx.rollback().await;
+                            return Err(rustler::Error::Term(Box::new(format!(
+                                "Batch statement error: {}",
+                                e
+                            ))));
+                        }
                     }
                 }
             }
@@ -1181,8 +1207,6 @@ fn execute_prepared<'a>(
         .map(|t| decode_term_to_value(t))
         .collect::<Result<_, _>>()
         .map_err(|e| rustler::Error::Term(Box::new(e)))?;
-
-    let _is_sync = !matches!(detect_query_type(sql_hint), QueryType::Select);
 
     drop(stmt_registry); // Release lock before async operation
     drop(conn_map); // Release lock before async operation
