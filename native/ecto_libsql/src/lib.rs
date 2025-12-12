@@ -303,35 +303,35 @@ pub fn query_with_trx_args<'a>(
         .collect::<Result<_, _>>()
         .map_err(|e| rustler::Error::Term(Box::new(e)))?;
 
-    // Determine query type and use appropriate method
-    let query_type = detect_query_type(query);
+    // Determine whether to use query() or execute() based on statement
+    let use_query = should_use_query(query);
 
     TOKIO_RUNTIME.block_on(async {
-        match query_type {
-            QueryType::Select => {
-                // SELECT statements - use query()
-                let res_rows = entry
-                    .transaction
-                    .query(&query, decoded_args)
-                    .await
-                    .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
+        if use_query {
+            // Statements that return rows (SELECT, or INSERT/UPDATE/DELETE with RETURNING)
+            let res_rows = entry
+                .transaction
+                .query(&query, decoded_args)
+                .await
+                .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
 
-                collect_rows(env, res_rows).await
-            }
-            _ => {
-                // Non-SELECT statements - use execute()
-                let rows_affected = entry
-                    .transaction
-                    .execute(&query, decoded_args)
-                    .await
-                    .map_err(|e| rustler::Error::Term(Box::new(format!("Execute failed: {}", e))))?;
+            collect_rows(env, res_rows).await
+        } else {
+            // Statements that don't return rows (INSERT/UPDATE/DELETE without RETURNING)
+            let rows_affected = entry
+                .transaction
+                .execute(&query, decoded_args)
+                .await
+                .map_err(|e| rustler::Error::Term(Box::new(format!("Execute failed: {}", e))))?;
 
-                // Return empty result with row count
-                let empty_columns: Vec<Term> = Vec::new();
-                let empty_rows: Vec<Term> = Vec::new();
-                let result = (empty_columns, empty_rows, rows_affected);
-                Ok(result.encode(env))
-            }
+            // Return result map matching collect_rows format
+            let empty_columns: Vec<Term> = Vec::new();
+            let empty_rows: Vec<Term> = Vec::new();
+            let mut result_map: HashMap<String, Term<'a>> = HashMap::new();
+            result_map.insert("columns".to_string(), empty_columns.encode(env));
+            result_map.insert("rows".to_string(), empty_rows.encode(env));
+            result_map.insert("num_rows".to_string(), rows_affected.encode(env));
+            Ok(result_map.encode(env))
         }
     })
 }
@@ -606,48 +606,47 @@ fn query_args<'a>(
 
         let params = params.map_err(|e| rustler::Error::Term(Box::new(e)))?;
 
-        // Determine whether to use query() or execute() based on statement type
-        let query_type = detect_query_type(query);
+        // Determine whether to use query() or execute() based on statement
+        let use_query = should_use_query(query);
 
         TOKIO_RUNTIME.block_on(async {
             let client_guard = safe_lock_arc(&client, "query_args client")?;
             let conn_guard = safe_lock_arc(&client_guard.client, "query_args conn")?;
 
-            // Use execute() for non-SELECT statements, query() for SELECT
-            match query_type {
-                QueryType::Select => {
-                    // SELECT statements return rows - use query()
-                    let res = conn_guard.query(query, params).await;
+            // NOTE: LibSQL automatically syncs writes to remote for embedded replicas.
+            // According to Turso docs, "writes are sent to the remote primary database by default,
+            // then the local database updates automatically once the remote write succeeds."
+            // We do NOT need to manually call sync() after writes - that would be redundant
+            // and cause performance issues. Manual sync via do_sync() is still available for
+            // explicit user control.
 
-                    match res {
-                        Ok(res_rows) => {
-                            let result = collect_rows(env, res_rows).await?;
-                            Ok(result)
-                        }
-                        Err(e) => Err(rustler::Error::Term(Box::new(e.to_string()))),
+            if use_query {
+                // Statements that return rows (SELECT, or INSERT/UPDATE/DELETE with RETURNING)
+                let res = conn_guard.query(query, params).await;
+
+                match res {
+                    Ok(res_rows) => {
+                        let result = collect_rows(env, res_rows).await?;
+                        Ok(result)
                     }
+                    Err(e) => Err(rustler::Error::Term(Box::new(e.to_string()))),
                 }
-                _ => {
-                    // Non-SELECT statements (INSERT, UPDATE, DELETE, etc.) - use execute()
-                    let res = conn_guard.execute(query, params).await;
+            } else {
+                // Statements that don't return rows (INSERT/UPDATE/DELETE without RETURNING)
+                let res = conn_guard.execute(query, params).await;
 
-                    match res {
-                        Ok(rows_affected) => {
-                            // Return empty result with row count for non-SELECT statements
-                            let empty_columns: Vec<Term> = Vec::new();
-                            let empty_rows: Vec<Term> = Vec::new();
-                            let result = (empty_columns, empty_rows, rows_affected);
-                            Ok(result.encode(env))
-                        }
-                        Err(e) => Err(rustler::Error::Term(Box::new(e.to_string()))),
+                match res {
+                    Ok(rows_affected) => {
+                        // Return result map matching collect_rows format
+                        let empty_columns: Vec<Term> = Vec::new();
+                        let empty_rows: Vec<Term> = Vec::new();
+                        let mut result_map: HashMap<String, Term<'a>> = HashMap::new();
+                        result_map.insert("columns".to_string(), empty_columns.encode(env));
+                        result_map.insert("rows".to_string(), empty_rows.encode(env));
+                        result_map.insert("num_rows".to_string(), rows_affected.encode(env));
+                        Ok(result_map.encode(env))
                     }
-
-                    // NOTE: LibSQL automatically syncs writes to remote for embedded replicas.
-                    // According to Turso docs, "writes are sent to the remote primary database by default,
-                    // then the local database updates automatically once the remote write succeeds."
-                    // We do NOT need to manually call sync() after writes - that would be redundant
-                    // and cause performance issues. Manual sync via do_sync() is still available for
-                    // explicit user control.
+                    Err(e) => Err(rustler::Error::Term(Box::new(e.to_string()))),
                 }
             }
         })
@@ -812,6 +811,85 @@ pub fn detect_query_type(query: &str) -> QueryType {
         _ => QueryType::Other,
     }
 }
+
+/// Determines if a query should use query() or execute()
+/// Returns true if should use query() (SELECT or has RETURNING clause)
+///
+/// Performance optimisations:
+/// - Zero allocations (no to_uppercase())
+/// - Single-pass byte scanning
+/// - Early termination on match
+/// - Case-insensitive ASCII comparison without allocations
+#[inline]
+pub fn should_use_query(sql: &str) -> bool {
+    let bytes = sql.as_bytes();
+    let len = bytes.len();
+
+    if len == 0 {
+        return false;
+    }
+
+    // Find first non-whitespace character
+    let mut start = 0;
+    while start < len && bytes[start].is_ascii_whitespace() {
+        start += 1;
+    }
+
+    if start >= len {
+        return false;
+    }
+
+    // Check if starts with SELECT (case-insensitive)
+    // We check the minimum needed: "SELECT" is 6 chars
+    if len - start >= 6 {
+        if (bytes[start] == b'S' || bytes[start] == b's')
+            && (bytes[start + 1] == b'E' || bytes[start + 1] == b'e')
+            && (bytes[start + 2] == b'L' || bytes[start + 2] == b'l')
+            && (bytes[start + 3] == b'E' || bytes[start + 3] == b'e')
+            && (bytes[start + 4] == b'C' || bytes[start + 4] == b'c')
+            && (bytes[start + 5] == b'T' || bytes[start + 5] == b't')
+        {
+            // Verify it's followed by whitespace or end of string
+            if start + 6 >= len || bytes[start + 6].is_ascii_whitespace() {
+                return true;
+            }
+        }
+    }
+
+    // Check for RETURNING clause (case-insensitive)
+    // Single pass through the string looking for " RETURNING" or "\nRETURNING" etc
+    // We need at least "RETURNING" which is 9 chars
+    if len >= 9 {
+        let target = b"RETURNING";
+        let mut i = 0;
+
+        while i <= len - 9 {
+            // Only check if preceded by whitespace or it's at the start
+            if i == 0 || bytes[i - 1].is_ascii_whitespace() {
+                let mut matches = true;
+                for j in 0..9 {
+                    let c = bytes[i + j];
+                    let t = target[j];
+                    // Case-insensitive comparison for ASCII
+                    if c != t && c != t.to_ascii_lowercase() {
+                        matches = false;
+                        break;
+                    }
+                }
+
+                if matches {
+                    // Verify it's followed by whitespace or end of string
+                    if i + 9 >= len || bytes[i + 9].is_ascii_whitespace() {
+                        return true;
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+
+    false
+}
 // Batch execution support - executes statements sequentially without transaction
 #[rustler::nif(schedule = "DirtyIo")]
 fn execute_batch<'a>(
@@ -850,50 +928,47 @@ fn execute_batch<'a>(
                 let client_guard = safe_lock_arc(&client, "execute_batch client")?;
                 let conn_guard = safe_lock_arc(&client_guard.client, "execute_batch conn")?;
 
-                // Determine query type and use appropriate method
-                let query_type = detect_query_type(sql);
+                // Determine whether to use query() or execute()
+                let use_query = should_use_query(sql);
 
-                match query_type {
-                    QueryType::Select => {
-                        // SELECT statements - use query()
-                        match conn_guard.query(sql, args.clone()).await {
-                            Ok(rows) => {
-                                let collected = collect_rows(env, rows)
-                                    .await
-                                    .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
-                                all_results.push(collected);
-                            }
-                            Err(e) => {
-                                return Err(rustler::Error::Term(Box::new(format!(
-                                    "Batch statement error: {}",
-                                    e
-                                ))));
-                            }
+                if use_query {
+                    // Statements that return rows (SELECT, or INSERT/UPDATE/DELETE with RETURNING)
+                    match conn_guard.query(sql, args.clone()).await {
+                        Ok(rows) => {
+                            let collected = collect_rows(env, rows)
+                                .await
+                                .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
+                            all_results.push(collected);
+                        }
+                        Err(e) => {
+                            return Err(rustler::Error::Term(Box::new(format!(
+                                "Batch statement error: {}",
+                                e
+                            ))));
                         }
                     }
-                    _ => {
-                        // Non-SELECT statements - use execute()
-                        match conn_guard.execute(sql, args.clone()).await {
-                            Ok(rows_affected) => {
-                                let empty_columns: Vec<Term> = Vec::new();
-                                let empty_rows: Vec<Term> = Vec::new();
-                                let result = (empty_columns, empty_rows, rows_affected);
-                                all_results.push(result.encode(env));
-                            }
-                            Err(e) => {
-                                return Err(rustler::Error::Term(Box::new(format!(
-                                    "Batch statement error: {}",
-                                    e
-                                ))));
-                            }
+                } else {
+                    // Statements that don't return rows (INSERT/UPDATE/DELETE without RETURNING)
+                    match conn_guard.execute(sql, args.clone()).await {
+                        Ok(rows_affected) => {
+                            // Return result map matching collect_rows format
+                            let empty_columns: Vec<Term> = Vec::new();
+                            let empty_rows: Vec<Term> = Vec::new();
+                            let mut result_map: HashMap<String, Term<'a>> = HashMap::new();
+                            result_map.insert("columns".to_string(), empty_columns.encode(env));
+                            result_map.insert("rows".to_string(), empty_rows.encode(env));
+                            result_map.insert("num_rows".to_string(), rows_affected.encode(env));
+                            all_results.push(result_map.encode(env));
+                        }
+                        Err(e) => {
+                            return Err(rustler::Error::Term(Box::new(format!(
+                                "Batch statement error: {}",
+                                e
+                            ))));
                         }
                     }
                 }
             }
-
-            // Check if we need to sync
-            // NOTE: LibSQL automatically syncs writes to remote for embedded replicas.
-            // No manual sync needed here.
 
             Ok(Ok(all_results.encode(env)))
         });
@@ -969,10 +1044,6 @@ fn execute_transactional_batch<'a>(
             trx.commit()
                 .await
                 .map_err(|e| rustler::Error::Term(Box::new(format!("Commit failed: {}", e))))?;
-
-            // Sync if needed
-            // NOTE: LibSQL automatically syncs writes to remote for embedded replicas.
-            // No manual sync needed here.
 
             Ok(Ok(all_results.encode(env)))
         });
@@ -1127,9 +1198,6 @@ fn execute_prepared<'a>(
             .execute(decoded_args)
             .await
             .map_err(|e| rustler::Error::Term(Box::new(format!("Execute failed: {}", e))))?;
-
-        // NOTE: LibSQL automatically syncs writes to remote for embedded replicas.
-        // No manual sync needed here.
 
         Ok(affected as u64)
     });

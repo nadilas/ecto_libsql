@@ -102,6 +102,290 @@ mod query_type_detection {
     }
 }
 
+/// Tests for optimized should_use_query() function
+///
+/// This function is critical for performance as it runs on every SQL operation.
+/// Tests verify correctness of the optimized zero-allocation implementation.
+mod should_use_query_tests {
+    use super::*;
+
+    // ===== SELECT Statement Tests =====
+
+    #[test]
+    fn test_select_basic() {
+        assert!(should_use_query("SELECT * FROM users"));
+        assert!(should_use_query("SELECT id FROM posts"));
+    }
+
+    #[test]
+    fn test_select_case_insensitive() {
+        assert!(should_use_query("SELECT * FROM users"));
+        assert!(should_use_query("select * from users"));
+        assert!(should_use_query("SeLeCt * FROM users"));
+        assert!(should_use_query("sElEcT id, name FROM posts"));
+    }
+
+    #[test]
+    fn test_select_with_leading_whitespace() {
+        assert!(should_use_query("  SELECT * FROM users"));
+        assert!(should_use_query("\tSELECT * FROM users"));
+        assert!(should_use_query("\nSELECT * FROM users"));
+        assert!(should_use_query("   \n\t  SELECT * FROM users"));
+        assert!(should_use_query("\r\nSELECT * FROM users"));
+    }
+
+    #[test]
+    fn test_select_followed_by_whitespace() {
+        assert!(should_use_query("SELECT "));
+        assert!(should_use_query("SELECT\t"));
+        assert!(should_use_query("SELECT\n"));
+        assert!(should_use_query("SELECT\r\n"));
+    }
+
+    #[test]
+    fn test_not_select_if_part_of_word() {
+        // "SELECTED" should not match SELECT
+        assert!(!should_use_query("SELECTED FROM users"));
+        assert!(!should_use_query("SELECTALL FROM posts"));
+    }
+
+    // ===== RETURNING Clause Tests =====
+
+    #[test]
+    fn test_insert_with_returning() {
+        assert!(should_use_query(
+            "INSERT INTO users (name) VALUES ('Alice') RETURNING id"
+        ));
+        assert!(should_use_query(
+            "INSERT INTO users VALUES (1, 'Bob') RETURNING id, name"
+        ));
+        assert!(should_use_query(
+            "INSERT INTO posts (title) VALUES ('Test') RETURNING *"
+        ));
+    }
+
+    #[test]
+    fn test_update_with_returning() {
+        assert!(should_use_query(
+            "UPDATE users SET name = 'Alice' WHERE id = 1 RETURNING *"
+        ));
+        assert!(should_use_query(
+            "UPDATE posts SET title = 'New' RETURNING id, title"
+        ));
+    }
+
+    #[test]
+    fn test_delete_with_returning() {
+        assert!(should_use_query(
+            "DELETE FROM users WHERE id = 1 RETURNING id"
+        ));
+        assert!(should_use_query("DELETE FROM posts RETURNING *"));
+    }
+
+    #[test]
+    fn test_returning_case_insensitive() {
+        assert!(should_use_query(
+            "INSERT INTO users VALUES (1) RETURNING id"
+        ));
+        assert!(should_use_query(
+            "INSERT INTO users VALUES (1) returning id"
+        ));
+        assert!(should_use_query(
+            "INSERT INTO users VALUES (1) ReTuRnInG id"
+        ));
+    }
+
+    #[test]
+    fn test_returning_with_whitespace() {
+        assert!(should_use_query(
+            "INSERT INTO users VALUES (1)\nRETURNING id"
+        ));
+        assert!(should_use_query(
+            "INSERT INTO users VALUES (1)\tRETURNING id"
+        ));
+        assert!(should_use_query(
+            "INSERT INTO users VALUES (1)  RETURNING id"
+        ));
+    }
+
+    #[test]
+    fn test_not_returning_if_part_of_word() {
+        // "NORETURNING" should not match RETURNING
+        assert!(!should_use_query(
+            "INSERT INTO users VALUES (1) NORETURNING id"
+        ));
+    }
+
+    // ===== Non-SELECT, Non-RETURNING Tests =====
+
+    #[test]
+    fn test_insert_without_returning() {
+        assert!(!should_use_query(
+            "INSERT INTO users (name) VALUES ('Alice')"
+        ));
+        assert!(!should_use_query("INSERT INTO posts VALUES (1, 'title')"));
+    }
+
+    #[test]
+    fn test_update_without_returning() {
+        assert!(!should_use_query(
+            "UPDATE users SET name = 'Bob' WHERE id = 1"
+        ));
+        assert!(!should_use_query("UPDATE posts SET title = 'New'"));
+    }
+
+    #[test]
+    fn test_delete_without_returning() {
+        assert!(!should_use_query("DELETE FROM users WHERE id = 1"));
+        assert!(!should_use_query("DELETE FROM posts"));
+    }
+
+    #[test]
+    fn test_ddl_statements() {
+        assert!(!should_use_query("CREATE TABLE users (id INTEGER)"));
+        assert!(!should_use_query("DROP TABLE users"));
+        assert!(!should_use_query("ALTER TABLE users ADD COLUMN email TEXT"));
+        assert!(!should_use_query("CREATE INDEX idx_email ON users(email)"));
+    }
+
+    #[test]
+    fn test_transaction_statements() {
+        assert!(!should_use_query("BEGIN TRANSACTION"));
+        assert!(!should_use_query("COMMIT"));
+        assert!(!should_use_query("ROLLBACK"));
+    }
+
+    #[test]
+    fn test_pragma_statements() {
+        assert!(!should_use_query("PRAGMA table_info(users)"));
+        assert!(!should_use_query("PRAGMA foreign_keys = ON"));
+    }
+
+    // ===== Edge Cases =====
+
+    #[test]
+    fn test_empty_string() {
+        assert!(!should_use_query(""));
+    }
+
+    #[test]
+    fn test_whitespace_only() {
+        assert!(!should_use_query("   "));
+        assert!(!should_use_query("\t\n"));
+        assert!(!should_use_query("  \t  \n  "));
+    }
+
+    #[test]
+    fn test_very_short_strings() {
+        assert!(!should_use_query("S"));
+        assert!(!should_use_query("SEL"));
+        assert!(!should_use_query("SELEC"));
+    }
+
+    #[test]
+    fn test_multiline_sql() {
+        assert!(should_use_query(
+            "SELECT id,\n       name,\n       email\nFROM users\nWHERE active = 1"
+        ));
+        assert!(should_use_query(
+            "INSERT INTO users (name)\nVALUES ('Alice')\nRETURNING id"
+        ));
+    }
+
+    #[test]
+    fn test_sql_with_comments() {
+        // Comments BEFORE the statement: we don't parse SQL comments,
+        // so "-- Comment\nSELECT" won't detect SELECT (first non-whitespace is '-')
+        // This is fine - Ecto doesn't generate SQL with leading comments
+        assert!(!should_use_query("-- Comment\nSELECT * FROM users"));
+
+        // Comments WITHIN the statement are fine - we detect keywords/clauses
+        assert!(should_use_query(
+            "INSERT INTO users VALUES (1) /* comment */ RETURNING id"
+        ));
+        assert!(should_use_query("SELECT /* comment */ * FROM users"));
+    }
+
+    #[test]
+    fn test_returning_at_different_positions() {
+        assert!(should_use_query(
+            "INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com') RETURNING id"
+        ));
+        assert!(should_use_query(
+            "UPDATE users SET name = 'Bob' WHERE id = 1 RETURNING id, name, email"
+        ));
+        // RETURNING as last word
+        assert!(should_use_query(
+            "INSERT INTO users (id) VALUES (1) RETURNING"
+        ));
+    }
+
+    #[test]
+    fn test_complex_real_world_queries() {
+        // Ecto-generated INSERT with RETURNING
+        assert!(should_use_query(
+            "INSERT INTO \"users\" (\"name\",\"email\",\"inserted_at\",\"updated_at\") VALUES ($1,$2,$3,$4) RETURNING \"id\""
+        ));
+
+        // Ecto-generated UPDATE with RETURNING
+        assert!(should_use_query(
+            "UPDATE \"users\" SET \"name\" = $1, \"updated_at\" = $2 WHERE \"id\" = $3 RETURNING \"id\",\"name\",\"email\",\"inserted_at\",\"updated_at\""
+        ));
+
+        // Ecto-generated DELETE without RETURNING
+        assert!(!should_use_query("DELETE FROM \"users\" WHERE \"id\" = $1"));
+
+        // Complex SELECT
+        assert!(should_use_query(
+            "SELECT u0.\"id\", u0.\"name\", u0.\"email\" FROM \"users\" AS u0 WHERE (u0.\"active\" = $1) ORDER BY u0.\"name\" LIMIT $2"
+        ));
+    }
+
+    // ===== Performance Characteristics Tests =====
+    // These don't test correctness, but verify the function handles edge cases
+
+    #[test]
+    fn test_long_sql_statement() {
+        let long_select = format!(
+            "SELECT {} FROM users",
+            (0..1000)
+                .map(|i| format!("col{}", i))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        assert!(should_use_query(&long_select));
+
+        let long_insert = format!(
+            "INSERT INTO users ({}) VALUES ({})",
+            (0..500)
+                .map(|i| format!("col{}", i))
+                .collect::<Vec<_>>()
+                .join(", "),
+            (0..500)
+                .map(|i| format!("${}", i + 1))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        assert!(!should_use_query(&long_insert));
+    }
+
+    #[test]
+    fn test_returning_near_end_of_long_statement() {
+        let long_insert_with_returning = format!(
+            "INSERT INTO users ({}) VALUES ({}) RETURNING id",
+            (0..500)
+                .map(|i| format!("col{}", i))
+                .collect::<Vec<_>>()
+                .join(", "),
+            (0..500)
+                .map(|i| format!("${}", i + 1))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        assert!(should_use_query(&long_insert_with_returning));
+    }
+}
+
 /// Integration tests with a real SQLite database
 ///
 /// These tests require libsql to be working and will create temporary databases.
