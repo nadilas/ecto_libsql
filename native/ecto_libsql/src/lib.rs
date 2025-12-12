@@ -1267,14 +1267,11 @@ fn last_insert_rowid(conn_id: &str) -> NifResult<i64> {
             .ok_or_else(|| rustler::Error::Term(Box::new("Invalid connection ID")))?
     }; // Lock dropped here
 
-    let result = TOKIO_RUNTIME.block_on(async {
-        let client_guard = safe_lock_arc(&client, "last_insert_rowid client")?;
-        let conn_guard = safe_lock_arc(&client_guard.client, "last_insert_rowid conn")?;
+    // Synchronous operation - no async needed
+    let client_guard = safe_lock_arc(&client, "last_insert_rowid client")?;
+    let conn_guard = safe_lock_arc(&client_guard.client, "last_insert_rowid conn")?;
 
-        Ok::<i64, rustler::Error>(conn_guard.last_insert_rowid())
-    })?;
-
-    Ok(result)
+    Ok(conn_guard.last_insert_rowid())
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
@@ -1287,14 +1284,11 @@ fn changes(conn_id: &str) -> NifResult<u64> {
             .ok_or_else(|| rustler::Error::Term(Box::new("Invalid connection ID")))?
     }; // Lock dropped here
 
-    let result = TOKIO_RUNTIME.block_on(async {
-        let client_guard = safe_lock_arc(&client, "changes client")?;
-        let conn_guard = safe_lock_arc(&client_guard.client, "changes conn")?;
+    // Synchronous operation - no async needed
+    let client_guard = safe_lock_arc(&client, "changes client")?;
+    let conn_guard = safe_lock_arc(&client_guard.client, "changes conn")?;
 
-        Ok::<u64, rustler::Error>(conn_guard.changes())
-    })?;
-
-    Ok(result)
+    Ok(conn_guard.changes())
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
@@ -1307,14 +1301,11 @@ fn total_changes(conn_id: &str) -> NifResult<u64> {
             .ok_or_else(|| rustler::Error::Term(Box::new("Invalid connection ID")))?
     }; // Lock dropped here
 
-    let result = TOKIO_RUNTIME.block_on(async {
-        let client_guard = safe_lock_arc(&client, "total_changes client")?;
-        let conn_guard = safe_lock_arc(&client_guard.client, "total_changes conn")?;
+    // Synchronous operation - no async needed
+    let client_guard = safe_lock_arc(&client, "total_changes client")?;
+    let conn_guard = safe_lock_arc(&client_guard.client, "total_changes conn")?;
 
-        Ok::<u64, rustler::Error>(conn_guard.total_changes())
-    })?;
-
-    Ok(result)
+    Ok(conn_guard.total_changes())
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
@@ -1327,14 +1318,11 @@ fn is_autocommit(conn_id: &str) -> NifResult<bool> {
             .ok_or_else(|| rustler::Error::Term(Box::new("Invalid connection ID")))?
     }; // Lock dropped here
 
-    let result = TOKIO_RUNTIME.block_on(async {
-        let client_guard = safe_lock_arc(&client, "is_autocommit client")?;
-        let conn_guard = safe_lock_arc(&client_guard.client, "is_autocommit conn")?;
+    // Synchronous operation - no async needed
+    let client_guard = safe_lock_arc(&client, "is_autocommit client")?;
+    let conn_guard = safe_lock_arc(&client_guard.client, "is_autocommit conn")?;
 
-        Ok::<bool, rustler::Error>(conn_guard.is_autocommit())
-    })?;
-
-    Ok(result)
+    Ok(conn_guard.is_autocommit())
 }
 
 // Cursor support for large result sets
