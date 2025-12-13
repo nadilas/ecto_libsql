@@ -306,6 +306,256 @@ mod should_use_query_tests {
         assert!(should_use_query("SELECT /* comment */ * FROM users"));
     }
 
+    // ===== Known Limitations: Keywords in Comments and Strings =====
+    //
+    // The following tests document **known limitations** of should_use_query().
+    // These are SAFE false positives (using query() when execute() would suffice).
+    //
+    // Full SQL parsing (to skip comments/strings) would be prohibitively expensive
+    // for this performance-critical path. The trade-off favours safety over perfection.
+
+    #[test]
+    fn test_returning_in_block_comment_false_positive() {
+        // KNOWN LIMITATION: RETURNING inside block comments is detected as a match.
+        // This is a SAFE false positive - using query() works correctly, just with
+        // slightly more overhead than execute() would have.
+        //
+        // Example: SELECT * /* RETURNING */ FROM users
+        // Current behavior: Returns true (false positive)
+        // Correct behavior: Should return false
+        // Impact: Minimal - query() handles SELECT correctly
+        //
+        // TODO: Future refactor to skip block comments (/* ... */) during keyword detection
+        // would eliminate this false positive. See "Recommendations for Future Improvements"
+        // section at end of this test module for details.
+        assert!(should_use_query("SELECT * /* RETURNING */ FROM users"));
+
+        // Another example with RETURNING in comment
+        assert!(should_use_query(
+            "UPDATE users SET name = 'Alice' /* RETURNING id */ WHERE id = 1"
+        ));
+
+        // Document the specific case from feedback: SELECT with RETURNING in comment
+        // Currently returns true (uses query()), which is safe but suboptimal.
+        // Ideally this should return false (use execute()), but we'd need comment-skipping
+        // logic to achieve that.
+        let result = should_use_query("SELECT * /* RETURNING */ FROM users");
+        // ASSERTION: Current behavior (true) is documented as a known limitation
+        // If this assertion fails after a refactor to skip comments, update to:
+        // assert!(!should_use_query("SELECT * /* RETURNING */ FROM users"));
+        assert_eq!(
+            result, true,
+            "Known limitation: RETURNING in block comments is detected"
+        );
+    }
+
+    #[test]
+    fn test_returning_in_string_literal_mixed_behavior() {
+        // PARTIALLY GOOD: String literals are correctly NOT matched when RETURNING
+        // is not surrounded by whitespace.
+        //
+        // Example: INSERT INTO t VALUES ('RETURNING')
+        // The 'R' in 'RETURNING' is preceded by a quote, not whitespace.
+        // Current behavior: Returns false (correct!)
+        assert!(!should_use_query("INSERT INTO t VALUES ('RETURNING')"));
+
+        // Even with space before the string
+        assert!(!should_use_query("INSERT INTO t VALUES ( 'RETURNING')"));
+
+        // Double-quoted strings also work correctly when not surrounded by whitespace
+        assert!(!should_use_query(
+            "INSERT INTO t (col) VALUES (\"RETURNING\")"
+        ));
+
+        // LIMITATION: If RETURNING appears inside a string with whitespace before AND after,
+        // it IS detected as a false positive. This is SAFE but suboptimal.
+        //
+        // Example: VALUES ('Error: RETURNING failed')
+        // The space before 'R' and after 'G' cause it to match.
+        // Current behavior: Returns true (false positive, but safe)
+        assert!(should_use_query(
+            "INSERT INTO logs (message) VALUES ('Error: RETURNING failed')"
+        ));
+
+        // But if there's no trailing whitespace, it's correctly NOT matched
+        assert!(!should_use_query(
+            "INSERT INTO logs (message) VALUES ('Error RETURNING')"
+        ));
+    }
+
+    #[test]
+    fn test_select_in_string_literal_no_issue() {
+        // String literals don't cause issues because we only check the START
+        // of the SQL statement for SELECT, and quotes aren't valid SQL starters.
+        //
+        // Example: INSERT INTO t VALUES ('SELECT * FROM users')
+        // This correctly returns false (INSERT, no RETURNING).
+        assert!(!should_use_query(
+            "INSERT INTO t VALUES ('SELECT * FROM users')"
+        ));
+    }
+
+    // ===== CTE (Common Table Expressions) Tests =====
+    //
+    // **OUT OF SCOPE**: Ecto does not generate CTE queries. These would need to
+    // be written as raw SQL fragments. The current implementation does NOT detect
+    // CTEs (returns false) because they start with WITH, not SELECT.
+    //
+    // If CTEs were supported, they would need special detection logic to check
+    // for WITH keyword at the start. For now, this is not implemented.
+
+    #[test]
+    fn test_cte_with_select_not_detected() {
+        // CTEs are NOT detected by the current implementation.
+        // These start with WITH, not SELECT, so they return false.
+        //
+        // Impact: If a developer writes raw CTE SQL, they would need to use
+        // Repo.query() directly instead of relying on Ecto to detect it.
+        // This is acceptable because Ecto doesn't generate CTEs.
+        assert!(!should_use_query(
+            "WITH active_users AS (SELECT * FROM users WHERE active = 1) SELECT * FROM active_users"
+        ));
+
+        assert!(!should_use_query(
+            "WITH RECURSIVE cte AS (SELECT 1 AS n UNION ALL SELECT n+1 FROM cte WHERE n < 10) SELECT * FROM cte"
+        ));
+
+        // Multiple CTEs also not detected
+        assert!(!should_use_query(
+            "WITH
+                admins AS (SELECT * FROM users WHERE role = 'admin'),
+                posts AS (SELECT * FROM posts WHERE published = 1)
+            SELECT * FROM admins JOIN posts"
+        ));
+    }
+
+    #[test]
+    fn test_cte_with_insert_returning_detected_via_returning() {
+        // CTE with INSERT...RETURNING IS detected, but only because of the
+        // RETURNING keyword, not because it's recognized as a CTE.
+        //
+        // This happens to work correctly (using query() is the right choice
+        // for CTEs), but it's coincidental rather than intentional.
+        assert!(should_use_query(
+            "WITH inserted AS (INSERT INTO users (name) VALUES ('Alice') RETURNING id) SELECT * FROM inserted"
+        ));
+    }
+
+    // ===== EXPLAIN Query Tests =====
+    //
+    // **OUT OF SCOPE**: Ecto does not generate EXPLAIN queries. These are
+    // typically used manually for query analysis/debugging. EXPLAIN queries
+    // always return rows (the query plan), but the current implementation
+    // only detects SELECT/RETURNING keywords.
+    //
+    // Impact: EXPLAIN SELECT works correctly (detects SELECT), but EXPLAIN
+    // INSERT/UPDATE/DELETE without RETURNING are not detected. Developers
+    // must use Repo.query() directly for these queries.
+
+    #[test]
+    fn test_explain_select_not_detected() {
+        // EXPLAIN SELECT is NOT detected because it starts with EXPLAIN, not SELECT.
+        // The SELECT keyword appears later in the statement.
+        //
+        // Impact: Developers using EXPLAIN SELECT must explicitly use Repo.query().
+        // This is acceptable since EXPLAIN is for debugging, not production code.
+        assert!(!should_use_query("EXPLAIN SELECT * FROM users"));
+        assert!(!should_use_query(
+            "EXPLAIN QUERY PLAN SELECT * FROM users WHERE id = 1"
+        ));
+    }
+
+    #[test]
+    fn test_explain_insert_not_detected() {
+        // EXPLAIN INSERT (without RETURNING) is not detected.
+        // This is expected and acceptable - developers use EXPLAIN manually.
+        assert!(!should_use_query(
+            "EXPLAIN INSERT INTO users VALUES (1, 'Alice')"
+        ));
+
+        // With RETURNING, it IS detected because of the RETURNING keyword
+        assert!(should_use_query(
+            "EXPLAIN INSERT INTO users VALUES (1, 'Alice') RETURNING id"
+        ));
+    }
+
+    #[test]
+    fn test_explain_update_delete_not_detected() {
+        // EXPLAIN UPDATE/DELETE without RETURNING are not detected.
+        assert!(!should_use_query(
+            "EXPLAIN UPDATE users SET name = 'Bob' WHERE id = 1"
+        ));
+        assert!(!should_use_query("EXPLAIN DELETE FROM users WHERE id = 1"));
+
+        // With RETURNING, detected via RETURNING keyword
+        assert!(should_use_query(
+            "EXPLAIN UPDATE users SET name = 'Bob' WHERE id = 1 RETURNING id"
+        ));
+    }
+
+    // ===== Recommendations for Future Improvements =====
+    //
+    // If stricter accuracy is needed in the future, consider these follow-up refactors:
+    //
+    // 1. **Comment Skipping (PRIORITY: Medium)**
+    //    Eliminate false positives for keywords inside block comments (/* ... */).
+    //
+    //    Current behavior: Keywords in comments are detected (safe false positives)
+    //    Proposed fix: Add pre-processing to skip block comments before keyword detection
+    //
+    //    Example that would improve:
+    //      - "SELECT * /* RETURNING */ FROM users" currently returns true
+    //        Should return false (SELECT detected at start is more important)
+    //
+    //    Implementation sketch:
+    //    ```rust
+    //    fn skip_block_comments(sql: &str) -> String {
+    //        let mut result = String::new();
+    //        let mut chars = sql.chars().peekable();
+    //        while let Some(c) = chars.next() {
+    //            if c == '/' && chars.peek() == Some(&'*') {
+    //                chars.next(); // consume '*'
+    //                // Skip until we find '*/'
+    //                loop {
+    //                    match chars.next() {
+    //                        Some('*') if chars.peek() == Some(&'/') => {
+    //                            chars.next(); // consume '/'
+    //                            break;
+    //                        }
+    //                        None => break,
+    //                        _ => {}
+    //                    }
+    //                }
+    //                result.push(' '); // Replace comment with space
+    //            } else {
+    //                result.push(c);
+    //            }
+    //        }
+    //        result
+    //    }
+    //    ```
+    //
+    // 2. **String Literal Skipping (PRIORITY: Low)**
+    //    Skip string literals ('...' and "...") to avoid matching keywords in strings.
+    //    More complex than comment skipping due to SQL escape sequences.
+    //    Benefit: Minimal (current behavior is already safe due to whitespace requirement)
+    //
+    // 3. **EXPLAIN Detection (PRIORITY: Low)**
+    //    Add special handling for EXPLAIN queries, which always return rows.
+    //    Current behavior: EXPLAIN without SELECT/RETURNING returns false (suboptimal)
+    //    Benefit: Helps developers using EXPLAIN for query analysis (not production code)
+    //
+    // 4. **WITH Detection (CTE Support) (PRIORITY: Low)**
+    //    Explicitly detect WITH keyword at the start to handle Common Table Expressions.
+    //    Current behavior: CTEs without RETURNING return false (suboptimal)
+    //    Impact: Ecto doesn't generate CTEs, so this is only for raw SQL
+    //
+    // Trade-off: All improvements add complexity and reduce performance. The current
+    // simple implementation is fast and safe (false positives are acceptable).
+    //
+    // **Performance Budget**: The should_use_query() function runs on every SQL operation.
+    // Any enhancement must maintain O(n) performance with minimal constant factors.
+
     #[test]
     fn test_returning_at_different_positions() {
         assert!(should_use_query(

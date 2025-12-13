@@ -100,7 +100,7 @@ defmodule EctoLibSql.Native do
     do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
-  def declare_cursor_with_context(_id, _id_type, _sql, _args),
+  def declare_cursor_with_context(_conn_id, _id, _id_type, _sql, _args),
     do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
@@ -310,8 +310,19 @@ defmodule EctoLibSql.Native do
           "rows" => rows,
           "num_rows" => num_rows
         } ->
+          command = detect_command(statement)
+
+          # For INSERT/UPDATE/DELETE without actual returned rows, normalize empty lists to nil
+          # This ensures consistency with non-transactional path
+          {columns, rows} =
+            if command in [:insert, :update, :delete] and columns == [] and rows == [] do
+              {nil, nil}
+            else
+              {columns, rows}
+            end
+
           result = %EctoLibSql.Result{
-            command: detect_command(statement),
+            command: command,
             columns: columns,
             rows: rows,
             num_rows: num_rows
