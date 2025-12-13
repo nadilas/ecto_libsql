@@ -655,7 +655,9 @@ mod should_use_query_tests {
         // Plain SELECT without RETURNING must use query path (returns rows)
         // This was the core bug: it was being incorrectly routed to execute_with_transaction
         assert!(should_use_query("SELECT * FROM users"));
-        assert!(should_use_query("SELECT id, name FROM users WHERE active = 1"));
+        assert!(should_use_query(
+            "SELECT id, name FROM users WHERE active = 1"
+        ));
         assert!(should_use_query("SELECT COUNT(*) FROM users"));
     }
 
@@ -686,9 +688,7 @@ mod should_use_query_tests {
         // A SELECT with RETURNING is unusual in SQLite (RETURNING is INSERT/UPDATE/DELETE only)
         // but the function should still detect it correctly
         // This documents that SELECT takes priority (detected first)
-        assert!(should_use_query(
-            "SELECT * FROM users RETURNING id"
-        ));
+        assert!(should_use_query("SELECT * FROM users RETURNING id"));
     }
 
     #[test]
@@ -702,8 +702,12 @@ mod should_use_query_tests {
         assert!(should_use_query("SELECT * FROM users"));
 
         // INSERT/UPDATE/DELETE without RETURNING: execute path
-        assert!(!should_use_query("INSERT INTO users (name) VALUES ('Alice')"));
-        assert!(!should_use_query("UPDATE users SET name = 'Bob' WHERE id = 1"));
+        assert!(!should_use_query(
+            "INSERT INTO users (name) VALUES ('Alice')"
+        ));
+        assert!(!should_use_query(
+            "UPDATE users SET name = 'Bob' WHERE id = 1"
+        ));
         assert!(!should_use_query("DELETE FROM users WHERE id = 1"));
 
         // INSERT/UPDATE/DELETE with RETURNING: query path
@@ -727,18 +731,14 @@ mod should_use_query_tests {
         ));
 
         // SELECT with comments and RETURNING (edge case, unusual but documented)
-        assert!(should_use_query(
-            "SELECT * /* RETURNING */ FROM users"
-        ));
+        assert!(should_use_query("SELECT * /* RETURNING */ FROM users"));
     }
 
     #[test]
     fn test_select_edge_case_with_string_literals() {
         // String literals containing keywords shouldn't confuse detection
         // since we check the first non-whitespace token
-        assert!(should_use_query(
-            "SELECT 'RETURNING' AS literal FROM users"
-        ));
+        assert!(should_use_query("SELECT 'RETURNING' AS literal FROM users"));
         assert!(should_use_query(
             "SELECT 'INSERT' AS keyword_string FROM users"
         ));

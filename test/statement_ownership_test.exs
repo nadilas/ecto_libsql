@@ -228,7 +228,7 @@ defmodule EctoLibSql.StatementOwnershipTest do
       result = Native.fetch_cursor(conn_id2, cursor_id, 100)
       assert {:error, msg} = result
       assert msg =~ "does not belong to connection"
-      
+
       # Clean up cursor before returning
       Native.close(cursor_id, :cursor_id)
     end
@@ -278,7 +278,7 @@ defmodule EctoLibSql.StatementOwnershipTest do
       assert columns == ["id", "value"]
       assert length(rows) > 0
       assert count >= 0
-      
+
       # Clean up cursor before returning
       Native.close(cursor_id, :cursor_id)
     end
@@ -342,7 +342,7 @@ defmodule EctoLibSql.StatementOwnershipTest do
         )
 
       assert is_binary(result2)
-      
+
       # Clean up cursor from successful declaration
       Native.close(result2, :cursor_id)
 
@@ -390,11 +390,11 @@ defmodule EctoLibSql.StatementOwnershipTest do
         )
 
       assert is_binary(result2)
-      
+
       on_exit(fn ->
         Native.close(result2, :cursor_id)
       end)
-      
+
       # Clean up cursor before returning
       Native.close(result2, :cursor_id)
     end

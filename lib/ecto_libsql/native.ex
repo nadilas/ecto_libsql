@@ -301,7 +301,7 @@ defmodule EctoLibSql.Native do
       ) do
     # Detect the command type to route correctly
     command = detect_command(statement)
-    
+
     # For SELECT statements (even without RETURNING), use query_with_trx_args
     # For INSERT/UPDATE/DELETE with RETURNING, use query_with_trx_args
     # For INSERT/UPDATE/DELETE without RETURNING, use execute_with_transaction
