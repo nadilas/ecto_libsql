@@ -669,9 +669,10 @@ fn query_args<'a>(
 ) -> NifResult<Term<'a>> {
     let client = {
         let conn_map = safe_lock(&CONNECTION_REGISTRY, "query_args conn_map")?;
-        conn_map.get(conn_id).cloned().ok_or_else(|| {
-            rustler::Error::Term(Box::new("Invalid connection ID"))
-        })?
+        conn_map
+            .get(conn_id)
+            .cloned()
+            .ok_or_else(|| rustler::Error::Term(Box::new("Invalid connection ID")))?
     }; // Lock dropped here
 
     let params: Result<Vec<Value>, _> = args.into_iter().map(|t| decode_term_to_value(t)).collect();
@@ -743,12 +744,10 @@ fn ping(conn_id: String) -> NifResult<bool> {
         });
         match result {
             Ok(_) => Ok(true),
-            Err(e) => {
-                Err(rustler::Error::Term(Box::new(format!(
-                    "Ping error: {:?}",
-                    e
-                ))))
-            }
+            Err(e) => Err(rustler::Error::Term(Box::new(format!(
+                "Ping error: {:?}",
+                e
+            )))),
         }
     } else {
         Err(rustler::Error::Term(Box::new("Invalid connection ID")))
