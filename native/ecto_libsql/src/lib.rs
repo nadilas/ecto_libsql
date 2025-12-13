@@ -97,11 +97,9 @@ pub struct TransactionEntry {
 /// **Important**: The Elixir side normalizes `columns: []` and `rows: []` to `nil`
 /// for write commands to match Ecto's expectations.
 fn build_empty_result<'a>(env: Env<'a>, rows_affected: u64) -> Term<'a> {
-    let empty_columns: Vec<Term> = Vec::new();
-    let empty_rows: Vec<Term> = Vec::new();
-    let mut result_map: HashMap<String, Term<'a>> = HashMap::new();
-    result_map.insert("columns".to_string(), empty_columns.encode(env));
-    result_map.insert("rows".to_string(), empty_rows.encode(env));
+    let mut result_map: HashMap<String, Term<'a>> = HashMap::with_capacity(3);
+    result_map.insert("columns".to_string(), Vec::<Term>::new().encode(env));
+    result_map.insert("rows".to_string(), Vec::<Term>::new().encode(env));
     result_map.insert("num_rows".to_string(), rows_affected.encode(env));
     result_map.encode(env)
 }
@@ -312,10 +310,6 @@ pub fn begin_transaction(conn_id: &str) -> NifResult<String> {
 
         Ok(trx_id)
     } else {
-        println!(
-            "Connection ID not found begin transaction new : {}",
-            conn_id
-        );
         Err(rustler::Error::Term(Box::new("Invalid connection ID")))
     }
 }
@@ -351,10 +345,6 @@ pub fn begin_transaction_with_behavior(conn_id: &str, behavior: Atom) -> NifResu
 
         Ok(trx_id)
     } else {
-        println!(
-            "Connection ID not found begin transaction new : {}",
-            conn_id
-        );
         Err(rustler::Error::Term(Box::new("Invalid connection ID")))
     }
 }
@@ -549,7 +539,7 @@ fn connect(opts: Term, mode: Term) -> NifResult<String> {
         .decode()
         .map_err(|e| rustler::Error::Term(Box::new(format!("decode failed: {:?}", e))))?;
 
-    let mut map = HashMap::new();
+    let mut map = HashMap::with_capacity(list.len());
 
     for pair in list {
         let (key, value): (Atom, Term) = pair.decode().map_err(|e| {
@@ -680,7 +670,6 @@ fn query_args<'a>(
     let client = {
         let conn_map = safe_lock(&CONNECTION_REGISTRY, "query_args conn_map")?;
         conn_map.get(conn_id).cloned().ok_or_else(|| {
-            println!("query args Connection ID not found: {}", conn_id);
             rustler::Error::Term(Box::new("Invalid connection ID"))
         })?
     }; // Lock dropped here
@@ -755,7 +744,6 @@ fn ping(conn_id: String) -> NifResult<bool> {
         match result {
             Ok(_) => Ok(true),
             Err(e) => {
-                println!("Ping failed: {:?}", e);
                 Err(rustler::Error::Term(Box::new(format!(
                     "Ping error: {:?}",
                     e
@@ -763,7 +751,6 @@ fn ping(conn_id: String) -> NifResult<bool> {
             }
         }
     } else {
-        println!("Connection ID not found ping replica: {}", conn_id);
         Err(rustler::Error::Term(Box::new("Invalid connection ID")))
     }
 }
@@ -797,6 +784,7 @@ pub fn decode_term_to_value(term: Term) -> Result<Value, String> {
 async fn collect_rows<'a>(env: Env<'a>, mut rows: Rows) -> Result<Term<'a>, rustler::Error> {
     let mut column_names: Vec<String> = Vec::new();
     let mut collected_rows: Vec<Vec<Term<'a>>> = Vec::new();
+    let mut column_count: usize = 0;
 
     while let Some(row_result) = rows
         .next()
@@ -804,8 +792,9 @@ async fn collect_rows<'a>(env: Env<'a>, mut rows: Rows) -> Result<Term<'a>, rust
         .map_err(|e| rustler::Error::Term(Box::new(e.to_string())))?
     {
         if column_names.is_empty() {
-            for i in 0..row_result.column_count() {
-                if let Some(name) = row_result.column_name(i) {
+            column_count = row_result.column_count() as usize;
+            for i in 0..column_count {
+                if let Some(name) = row_result.column_name(i as i32) {
                     column_names.push(name.to_string());
                 } else {
                     column_names.push(format!("col{}", i));
@@ -813,7 +802,7 @@ async fn collect_rows<'a>(env: Env<'a>, mut rows: Rows) -> Result<Term<'a>, rust
             }
         }
 
-        let mut row_terms = Vec::new();
+        let mut row_terms = Vec::with_capacity(column_count);
         for i in 0..column_names.len() {
             let term = match row_result.get(i as i32) {
                 Ok(Value::Text(val)) => val.encode(env),
@@ -834,12 +823,10 @@ async fn collect_rows<'a>(env: Env<'a>, mut rows: Rows) -> Result<Term<'a>, rust
         collected_rows.push(row_terms);
     }
 
-    //Ok((column_names, collected_rows))
-
     let encoded_columns: Vec<Term> = column_names.iter().map(|c| c.encode(env)).collect();
     let encoded_rows: Vec<Term> = collected_rows.iter().map(|r| r.encode(env)).collect();
 
-    let mut result_map: HashMap<String, Term<'a>> = HashMap::new();
+    let mut result_map: HashMap<String, Term<'a>> = HashMap::with_capacity(3);
     result_map.insert("columns".to_string(), encoded_columns.encode(env));
     result_map.insert("rows".to_string(), encoded_rows.encode(env));
     result_map.insert(
@@ -1001,7 +988,7 @@ fn execute_batch<'a>(
     }; // Lock dropped here
 
     // Decode each statement with its arguments
-    let mut batch_stmts: Vec<(String, Vec<Value>)> = Vec::new();
+    let mut batch_stmts: Vec<(String, Vec<Value>)> = Vec::with_capacity(statements.len());
     for stmt_term in statements {
         let (query, args): (String, Vec<Term>) = stmt_term.decode().map_err(|e| {
             rustler::Error::Term(Box::new(format!("Failed to decode statement: {:?}", e)))
@@ -1027,7 +1014,7 @@ fn execute_batch<'a>(
         // Acquire lock once for the entire batch, not per-statement
         let conn_guard = safe_lock_arc(&connection, "execute_batch conn")?;
 
-        let mut all_results: Vec<Term<'a>> = Vec::new();
+        let mut all_results: Vec<Term<'a>> = Vec::with_capacity(batch_stmts.len());
 
         // Execute each statement sequentially with the same connection guard
         // Consume batch_stmts to avoid cloning args on each iteration
@@ -1090,7 +1077,7 @@ fn execute_transactional_batch<'a>(
     }; // Lock dropped here
 
     // Decode each statement with its arguments
-    let mut batch_stmts: Vec<(String, Vec<Value>)> = Vec::new();
+    let mut batch_stmts: Vec<(String, Vec<Value>)> = Vec::with_capacity(statements.len());
     for stmt_term in statements {
         let (query, args): (String, Vec<Term>) = stmt_term.decode().map_err(|e| {
             rustler::Error::Term(Box::new(format!("Failed to decode statement: {:?}", e)))
@@ -1120,7 +1107,7 @@ fn execute_transactional_batch<'a>(
             rustler::Error::Term(Box::new(format!("Begin transaction failed: {}", e)))
         })?;
 
-        let mut all_results: Vec<Term<'a>> = Vec::new();
+        let mut all_results: Vec<Term<'a>> = Vec::with_capacity(batch_stmts.len());
 
         // Execute each statement in the transaction
         // Consume batch_stmts to avoid cloning args on each iteration
@@ -1649,28 +1636,27 @@ fn fetch_cursor<'a>(
     // Convert to Elixir terms
     let elixir_columns: Vec<Term> = cursor.columns.iter().map(|c| c.encode(env)).collect();
 
-    let elixir_rows: Vec<Term> = fetched_rows
-        .iter()
-        .map(|row| {
-            let row_terms: Vec<Term> = row
-                .iter()
-                .map(|val| match val {
-                    Value::Text(s) => s.encode(env),
-                    Value::Integer(i) => i.encode(env),
-                    Value::Real(f) => f.encode(env),
-                    Value::Blob(b) => match OwnedBinary::new(b.len()) {
-                        Some(mut owned) => {
-                            owned.as_mut_slice().copy_from_slice(b);
-                            Binary::from_owned(owned, env).encode(env)
-                        }
-                        None => nil().encode(env),
-                    },
-                    Value::Null => nil().encode(env),
-                })
-                .collect();
-            row_terms.encode(env)
-        })
-        .collect();
+    let mut elixir_rows: Vec<Term> = Vec::with_capacity(fetch_count);
+    for row in fetched_rows.iter() {
+        let mut row_terms: Vec<Term> = Vec::with_capacity(row.len());
+        for val in row.iter() {
+            let term = match val {
+                Value::Text(s) => s.encode(env),
+                Value::Integer(i) => i.encode(env),
+                Value::Real(f) => f.encode(env),
+                Value::Blob(b) => match OwnedBinary::new(b.len()) {
+                    Some(mut owned) => {
+                        owned.as_mut_slice().copy_from_slice(b);
+                        Binary::from_owned(owned, env).encode(env)
+                    }
+                    None => nil().encode(env),
+                },
+                Value::Null => nil().encode(env),
+            };
+            row_terms.push(term);
+        }
+        elixir_rows.push(row_terms.encode(env));
+    }
 
     let result = (elixir_columns, elixir_rows, fetch_count);
     Ok(result.encode(env))
@@ -1817,7 +1803,7 @@ fn execute_batch_native<'a>(env: Env<'a>, conn_id: &str, sql: &str) -> NifResult
                 .map_err(|e| rustler::Error::Term(Box::new(format!("batch failed: {}", e))))?;
 
             // Collect all results
-            let mut results: Vec<Term<'a>> = Vec::new();
+            let mut results: Vec<Term<'a>> = Vec::new(); // Size unknown, so can't pre-allocate
             while let Some(maybe_rows) = batch_rows.next_stmt_row() {
                 match maybe_rows {
                     Some(rows) => {
