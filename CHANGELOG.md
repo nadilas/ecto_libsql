@@ -20,15 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Performance: Batch Operation Optimizations**
   - **Eliminated per-statement argument clones** in batch operations
   - Changed `batch_stmts.iter()` to `batch_stmts.into_iter()` to consume vector by value
-  - Removed `args.clone()` calls on lines 1033, 1049 (non-transactional batch)
-  - Removed `args.clone()` calls on lines 1119, 1140 (transactional batch)
+  - Removed `args.clone()` calls for non-transactional batch.
+  - Removed `args.clone()` calls for transactional batch.
   - Reduces memory allocations during batch execution for better throughput
 
 - **Lock Coupling Reduction**
   - Dropped outer `LibSQLConn` mutex guard earlier in batch operations
   - Extract inner `Arc<Mutex<libsql::Connection>>` before entering async block
   - Only hold inner connection lock during I/O operations
-  - Applied to: `execute_batch()`, `execute_transactional_batch()`, `execute_batch_native()`, `execute_transactional_batch_native()`
+  - Applied to `execute_batch()`, `execute_transactional_batch()`, `execute_batch_native()`, and `execute_transactional_batch_native()`
   - Reduces contention and deadlock surface area
   - Follows established pattern from `query_args()` function
 
@@ -38,13 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Documented CTE and EXPLAIN detection limitations with clear scope notes
   - Added comprehensive future improvement recommendations with priority levels and implementation sketches
   - Added performance budget note for optimization efforts
-  - All 53 Rust unit tests passing
-
-### Changed
-
-- **Code Formatting**
-  - All Rust code formatted with `cargo fmt` for consistent style
-  - All Elixir code formatted with `mix format` for consistent style
 
 ## [0.7.0] - 2025-12-09
 
