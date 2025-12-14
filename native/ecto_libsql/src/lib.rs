@@ -186,7 +186,10 @@ impl TransactionEntryGuard {
             )));
         }
 
-        self.entry.as_ref().map(|e| &e.transaction).ok_or_else(|| {
+        self.entry
+          .as_ref()
+          .map(|e| &e.transaction)
+          .ok_or_else(|| {
             rustler::Error::Term(Box::new("Transaction entry is missing"))
         })
     }
@@ -208,7 +211,9 @@ impl TransactionEntryGuard {
         // Mark as consumed so Drop won't try to re-insert
         self.consumed = true;
 
-        self.entry.take().ok_or_else(|| {
+        self.entry
+        .take()
+        .ok_or_else(|| {
             rustler::Error::Term(Box::new("Transaction entry is missing"))
         })
     }
@@ -390,18 +395,14 @@ pub fn execute_with_transaction<'a>(
     let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 
     // Execute async operation without holding the lock
-    let trx = guard.transaction()
+    let trx = guard
+        .transaction()
         .map_err(|e| rustler::Error::Term(Box::new(format!("Guard error: {:?}", e))))?;
     
     let result = TOKIO_RUNTIME
-        .block_on(async { 
-            trx.execute(&query, decoded_args)
-                .await 
-        })
+        .block_on(async { trx.execute(&query, decoded_args).await })
         .map_err(|e| rustler::Error::Term(Box::new(format!("Execute failed: {}", e))));
-
     // Guard automatically re-inserts the entry on drop
-
     result
 }
 
@@ -427,7 +428,8 @@ pub fn query_with_trx_args<'a>(
     let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 
     // Get transaction reference (before async, to handle errors properly)
-    let trx = guard.transaction()
+    let trx = guard
+        .transaction()
         .map_err(|e| rustler::Error::Term(Box::new(format!("Guard error: {:?}", e))))?;
 
     // Execute async operation without holding the lock
