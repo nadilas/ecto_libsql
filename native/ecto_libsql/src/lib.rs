@@ -112,13 +112,16 @@ fn build_empty_result<'a>(env: Env<'a>, rows_affected: u64) -> Term<'a> {
 /// used throughout the codebase. It guarantees re-insertion of the transaction
 /// entry on all paths (success, error, and panic) unless explicitly consumed.
 ///
+/// The guard tracks whether it has been consumed to prevent double-consumption
+/// or use-after-consume errors, returning proper `Result` errors instead of panicking.
+///
 /// # Usage
 ///
 /// ```rust
 /// // Standard pattern (re-inserts on drop)
 /// let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 /// let result = TOKIO_RUNTIME.block_on(async {
-///     guard.transaction().execute(&query, args).await
+///     guard.transaction()?.execute(&query, args).await
 /// });
 /// // Guard automatically re-inserts the entry here
 /// result.map_err(...)
@@ -127,13 +130,19 @@ fn build_empty_result<'a>(env: Env<'a>, rows_affected: u64) -> Term<'a> {
 /// ```rust
 /// // Consume pattern (for commit/rollback - no re-insertion)
 /// let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
-/// let entry = guard.consume();
+/// let entry = guard.consume()?;
 /// // ... commit or rollback the entry
 /// // Entry is NOT re-inserted
 /// ```
+///
+/// # Internal Use Only
+///
+/// This guard is for internal use within the NIF implementation and assumes
+/// correct usage patterns (transaction() and consume() called at most once).
 struct TransactionEntryGuard {
     trx_id: String,
     entry: Option<TransactionEntry>,
+    consumed: bool,
 }
 
 impl TransactionEntryGuard {
@@ -164,20 +173,24 @@ impl TransactionEntryGuard {
         Ok(Self {
             trx_id: trx_id.to_string(),
             entry: Some(entry),
+            consumed: false,
         })
     }
 
     /// Get a reference to the transaction.
     ///
-    /// # Panics
-    ///
-    /// Panics if the entry has already been consumed via `consume()`.
-    fn transaction(&self) -> &Transaction {
-        &self
-            .entry
-            .as_ref()
-            .expect("Entry already consumed")
-            .transaction
+    /// Returns an error if the entry has already been consumed via `consume()`.
+    /// This provides defensive error handling instead of panicking.
+    fn transaction(&self) -> Result<&Transaction, rustler::Error> {
+        if self.consumed {
+            return Err(rustler::Error::Term(Box::new(
+                "Transaction entry already consumed",
+            )));
+        }
+
+        self.entry.as_ref().map(|e| &e.transaction).ok_or_else(|| {
+            rustler::Error::Term(Box::new("Transaction entry is missing"))
+        })
     }
 
     /// Consume the guard without re-inserting the entry.
@@ -185,11 +198,21 @@ impl TransactionEntryGuard {
     /// This is used for commit/rollback operations where the transaction
     /// should not be re-inserted into the registry.
     ///
-    /// # Panics
-    ///
-    /// Panics if the entry has already been consumed.
-    fn consume(mut self) -> TransactionEntry {
-        self.entry.take().expect("Entry already consumed")
+    /// Returns an error if the entry has already been consumed, preventing
+    /// misuse and allowing proper error handling instead of panicking.
+    fn consume(mut self) -> Result<TransactionEntry, rustler::Error> {
+        if self.consumed {
+            return Err(rustler::Error::Term(Box::new(
+                "Transaction entry already consumed",
+            )));
+        }
+
+        // Mark as consumed so Drop won't try to re-insert
+        self.consumed = true;
+
+        self.entry.take().ok_or_else(|| {
+            rustler::Error::Term(Box::new("Transaction entry is missing"))
+        })
     }
 }
 
@@ -377,8 +400,14 @@ pub fn execute_with_transaction<'a>(
     let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 
     // Execute async operation without holding the lock
+    let trx = guard.transaction()
+        .map_err(|e| rustler::Error::Term(Box::new(format!("Guard error: {:?}", e))))?;
+    
     let result = TOKIO_RUNTIME
-        .block_on(async { guard.transaction().execute(&query, decoded_args).await })
+        .block_on(async { 
+            trx.execute(&query, decoded_args)
+                .await 
+        })
         .map_err(|e| rustler::Error::Term(Box::new(format!("Execute failed: {}", e))));
 
     // Guard automatically re-inserts the entry on drop
@@ -407,12 +436,15 @@ pub fn query_with_trx_args<'a>(
     // Take transaction entry with ownership verification
     let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 
+    // Get transaction reference (before async, to handle errors properly)
+    let trx = guard.transaction()
+        .map_err(|e| rustler::Error::Term(Box::new(format!("Guard error: {:?}", e))))?;
+
     // Execute async operation without holding the lock
     let result = TOKIO_RUNTIME.block_on(async {
         if use_query {
             // Statements that return rows (SELECT, or INSERT/UPDATE/DELETE with RETURNING)
-            let res_rows = guard
-                .transaction()
+            let res_rows = trx
                 .query(&query, decoded_args)
                 .await
                 .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
@@ -420,8 +452,7 @@ pub fn query_with_trx_args<'a>(
             collect_rows(env, res_rows).await
         } else {
             // Statements that don't return rows (INSERT/UPDATE/DELETE without RETURNING)
-            let rows_affected = guard
-                .transaction()
+            let rows_affected = trx
                 .execute(&query, decoded_args)
                 .await
                 .map_err(|e| rustler::Error::Term(Box::new(format!("Execute failed: {}", e))))?;
@@ -481,7 +512,7 @@ pub fn commit_or_rollback_transaction(
     let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 
     // Consume the entry (we don't want to re-insert after commit/rollback)
-    let entry = guard.consume();
+    let entry = guard.consume()?;
 
     let result = TOKIO_RUNTIME.block_on(async {
         if param == "commit" {
@@ -1496,10 +1527,13 @@ fn declare_cursor_with_context(
         // Capture conn_id for cursor ownership
         let cursor_conn_id = conn_id.to_string();
 
+        // Get transaction reference before async
+        let trx = guard.transaction()
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Guard error: {:?}", e))))?;
+
         // Execute query without holding the lock
         let (cols, rows) = TOKIO_RUNTIME.block_on(async {
-            let mut result_rows = guard
-                .transaction()
+            let mut result_rows = trx
                 .query(sql, decoded_args)
                 .await
                 .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
@@ -2024,9 +2058,16 @@ fn savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom> {
     // Take transaction entry with ownership verification
     let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 
+    // Get transaction reference before async
+    let trx = guard.transaction()
+        .map_err(|e| rustler::Error::Term(Box::new(format!("Guard error: {:?}", e))))?;
+
     // Execute async operation without holding the lock
     TOKIO_RUNTIME
-        .block_on(async { guard.transaction().execute(&sql, Vec::<Value>::new()).await })
+        .block_on(async { 
+            trx.execute(&sql, Vec::<Value>::new())
+                .await 
+        })
         .map_err(|e| rustler::Error::Term(Box::new(format!("Savepoint failed: {}", e))))?;
 
     // Guard automatically re-inserts the entry on drop
@@ -2046,9 +2087,16 @@ fn release_savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom>
     // Take transaction entry with ownership verification
     let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 
+    // Get transaction reference before async
+    let trx = guard.transaction()
+        .map_err(|e| rustler::Error::Term(Box::new(format!("Guard error: {:?}", e))))?;
+
     // Execute async operation without holding the lock
     TOKIO_RUNTIME
-        .block_on(async { guard.transaction().execute(&sql, Vec::<Value>::new()).await })
+        .block_on(async { 
+            trx.execute(&sql, Vec::<Value>::new())
+                .await 
+        })
         .map_err(|e| rustler::Error::Term(Box::new(format!("Release savepoint failed: {}", e))))?;
 
     // Guard automatically re-inserts the entry on drop
@@ -2069,9 +2117,16 @@ fn rollback_to_savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<A
     // Take transaction entry with ownership verification
     let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 
+    // Get transaction reference before async
+    let trx = guard.transaction()
+        .map_err(|e| rustler::Error::Term(Box::new(format!("Guard error: {:?}", e))))?;
+
     // Execute async operation without holding the lock
     TOKIO_RUNTIME
-        .block_on(async { guard.transaction().execute(&sql, Vec::<Value>::new()).await })
+        .block_on(async { 
+            trx.execute(&sql, Vec::<Value>::new())
+                .await 
+        })
         .map_err(|e| {
             rustler::Error::Term(Box::new(format!("Rollback to savepoint failed: {}", e)))
         })?;
