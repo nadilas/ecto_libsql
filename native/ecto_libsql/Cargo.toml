@@ -1,6 +1,6 @@
 [package]
 name = "ecto_libsql"
-version = "0.7.0"
+version = "0.7.5"
 authors = []
 edition = "2021"
 
