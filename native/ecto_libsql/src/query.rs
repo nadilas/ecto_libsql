@@ -129,15 +129,17 @@ pub fn do_sync(conn_id: &str, mode: Atom) -> NifResult<(Atom, String)> {
     let conn_map = safe_lock(&CONNECTION_REGISTRY, "do_sync")?;
     let client = conn_map
         .get(conn_id)
-        .ok_or_else(|| rustler::Error::Term(Box::new("Connection not found")))?;
+        .ok_or_else(|| rustler::Error::Term(Box::new("Connection not found")))?
+        .clone();
 
-    let client_clone = client.clone();
+    drop(conn_map); // Release lock before async operation
+
     let result = TOKIO_RUNTIME.block_on(async {
         if matches!(
             crate::decode::decode_mode(mode),
             Some(crate::models::Mode::RemoteReplica)
         ) {
-            crate::utils::sync_with_timeout(&client_clone, DEFAULT_SYNC_TIMEOUT_SECS).await?;
+            crate::utils::sync_with_timeout(&client, DEFAULT_SYNC_TIMEOUT_SECS).await?;
         }
 
         Ok::<_, String>(())

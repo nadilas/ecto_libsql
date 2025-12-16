@@ -22,7 +22,7 @@ use rustler::NifResult;
 /// {:ok, _} = EctoLibSql.execute("INSERT INTO users (name) VALUES (?)", ["Alice"])
 /// rowid = EctoLibSql.last_insert_rowid(conn_id)  # Returns the ID of the inserted user
 /// ```
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 pub fn last_insert_rowid(conn_id: &str) -> NifResult<i64> {
     let conn_map = safe_lock(&CONNECTION_REGISTRY, "last_insert_rowid conn_map")?;
 
@@ -58,7 +58,7 @@ pub fn last_insert_rowid(conn_id: &str) -> NifResult<i64> {
 /// {:ok, _} = EctoLibSql.execute("UPDATE users SET active = 1 WHERE age > 18")
 /// changes = EctoLibSql.changes(conn_id)  # Returns number of updated rows
 /// ```
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 pub fn changes(conn_id: &str) -> NifResult<u64> {
     let conn_map = safe_lock(&CONNECTION_REGISTRY, "changes conn_map")?;
 
@@ -129,7 +129,7 @@ pub fn total_changes(conn_id: &str) -> NifResult<u64> {
 /// ```elixir
 /// is_auto = EctoLibSql.is_autocommit(conn_id)  # Returns true outside transactions
 /// ```
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 pub fn is_autocommit(conn_id: &str) -> NifResult<bool> {
     let conn_map = safe_lock(&CONNECTION_REGISTRY, "is_autocommit conn_map")?;
 

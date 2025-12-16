@@ -14,7 +14,7 @@ use crate::models::{CursorData, Mode};
 pub fn decode_mode(atom: Atom) -> Option<Mode> {
     if atom == remote_replica() {
         Some(Mode::RemoteReplica)
-    } else if atom == remote_primary() {
+    } else if atom == remote() {
         Some(Mode::Remote)
     } else if atom == local() {
         Some(Mode::Local)

@@ -159,27 +159,35 @@ impl Drop for TransactionEntryGuard {
 #[rustler::nif(schedule = "DirtyIo")]
 pub fn begin_transaction(conn_id: &str) -> NifResult<String> {
     let conn_map = utils::safe_lock(&CONNECTION_REGISTRY, "begin_transaction conn_map")?;
-    if let Some(conn) = conn_map.get(conn_id) {
-        let conn_guard = utils::safe_lock_arc(conn, "begin_transaction conn")?;
-        let client_guard: MutexGuard<libsql::Connection> =
-            utils::safe_lock_arc(&conn_guard.client, "begin_transaction client")?;
+    let client = conn_map
+        .get(conn_id)
+        .cloned()
+        .ok_or_else(|| rustler::Error::Term(Box::new("Invalid connection ID")))?;
+    drop(conn_map); // Drop lock before async operation
 
-        let trx = TOKIO_RUNTIME
-            .block_on(async { client_guard.transaction().await })
-            .map_err(|e| rustler::Error::Term(Box::new(format!("Begin failed: {}", e))))?;
+    // Clone the inner connection Arc and drop the outer lock before async operations
+    let connection = {
+        let client_guard = utils::safe_lock_arc(&client, "begin_transaction client")?;
+        client_guard.client.clone()
+    }; // Outer lock dropped here
 
-        let trx_id = uuid::Uuid::new_v4().to_string();
-        let entry = TransactionEntry {
-            conn_id: conn_id.to_string(),
-            transaction: trx,
-        };
-        utils::safe_lock(&TXN_REGISTRY, "begin_transaction txn_registry")?
-            .insert(trx_id.clone(), entry);
+    let trx = TOKIO_RUNTIME.block_on(async {
+        let conn_guard = utils::safe_lock_arc(&connection, "begin_transaction conn")?;
+        conn_guard
+            .transaction()
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Begin failed: {}", e))))
+    })?;
 
-        Ok(trx_id)
-    } else {
-        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
-    }
+    let trx_id = uuid::Uuid::new_v4().to_string();
+    let entry = TransactionEntry {
+        conn_id: conn_id.to_string(),
+        transaction: trx,
+    };
+    utils::safe_lock(&TXN_REGISTRY, "begin_transaction txn_registry")?
+        .insert(trx_id.clone(), entry);
+
+    Ok(trx_id)
 }
 
 /// Begin a new database transaction with specific locking behavior.
@@ -197,37 +205,45 @@ pub fn begin_transaction(conn_id: &str) -> NifResult<String> {
 /// Returns a transaction ID on success, error on failure.
 #[rustler::nif(schedule = "DirtyIo")]
 pub fn begin_transaction_with_behavior(conn_id: &str, behavior: Atom) -> NifResult<String> {
+    let trx_behavior =
+        decode::decode_transaction_behavior(behavior).unwrap_or(TransactionBehavior::Deferred);
+
     let conn_map = utils::safe_lock(
         &CONNECTION_REGISTRY,
         "begin_transaction_with_behavior conn_map",
     )?;
-    if let Some(conn) = conn_map.get(conn_id) {
-        let trx_behavior =
-            decode::decode_transaction_behavior(behavior).unwrap_or(TransactionBehavior::Deferred);
+    let client = conn_map
+        .get(conn_id)
+        .cloned()
+        .ok_or_else(|| rustler::Error::Term(Box::new("Invalid connection ID")))?;
+    drop(conn_map); // Drop lock before async operation
 
-        let conn_guard = utils::safe_lock_arc(conn, "begin_transaction_with_behavior conn")?;
-        let client_guard: MutexGuard<libsql::Connection> =
-            utils::safe_lock_arc(&conn_guard.client, "begin_transaction_with_behavior client")?;
+    // Clone the inner connection Arc and drop the outer lock before async operations
+    let connection = {
+        let client_guard = utils::safe_lock_arc(&client, "begin_transaction_with_behavior client")?;
+        client_guard.client.clone()
+    }; // Outer lock dropped here
 
-        let trx = TOKIO_RUNTIME
-            .block_on(async { client_guard.transaction_with_behavior(trx_behavior).await })
-            .map_err(|e| rustler::Error::Term(Box::new(format!("Begin failed: {}", e))))?;
+    let trx = TOKIO_RUNTIME.block_on(async {
+        let conn_guard = utils::safe_lock_arc(&connection, "begin_transaction_with_behavior conn")?;
+        conn_guard
+            .transaction_with_behavior(trx_behavior)
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Begin failed: {}", e))))
+    })?;
 
-        let trx_id = uuid::Uuid::new_v4().to_string();
-        let entry = TransactionEntry {
-            conn_id: conn_id.to_string(),
-            transaction: trx,
-        };
-        utils::safe_lock(
-            &TXN_REGISTRY,
-            "begin_transaction_with_behavior txn_registry",
-        )?
-        .insert(trx_id.clone(), entry);
+    let trx_id = uuid::Uuid::new_v4().to_string();
+    let entry = TransactionEntry {
+        conn_id: conn_id.to_string(),
+        transaction: trx,
+    };
+    utils::safe_lock(
+        &TXN_REGISTRY,
+        "begin_transaction_with_behavior txn_registry",
+    )?
+    .insert(trx_id.clone(), entry);
 
-        Ok(trx_id)
-    } else {
-        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
-    }
+    Ok(trx_id)
 }
 
 /// Execute a SQL statement within a transaction without returning rows.
@@ -427,10 +443,10 @@ pub fn commit_or_rollback_transaction(
     });
 
     match result {
-        Ok(()) => Ok((rustler::types::atom::ok(), format!("{}  success", param))),
+        Ok(()) => Ok((rustler::types::atom::ok(), format!("{} success", param))),
         Err(e) => Err(rustler::Error::Term(Box::new(format!(
             "TOKIO_RUNTIME ERR {}",
-            e.to_string()
+            e
         )))),
     }
 }

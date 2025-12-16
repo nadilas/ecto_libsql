@@ -53,11 +53,8 @@ pub fn connect(opts: Term, mode: Term) -> NifResult<String> {
         .get("encryption_key")
         .and_then(|t| t.decode::<String>().ok());
 
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| rustler::Error::Term(Box::new(format!("Tokio runtime err {}", e))))?;
-
-    // Wrap the entire connection process with a timeout.
-    rt.block_on(async {
+    // Wrap the entire connection process with a timeout using the global runtime.
+    TOKIO_RUNTIME.block_on(async {
         let timeout = Duration::from_secs(DEFAULT_SYNC_TIMEOUT_SECS);
 
         tokio::time::timeout(timeout, async {

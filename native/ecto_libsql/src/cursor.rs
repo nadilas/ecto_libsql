@@ -33,70 +33,71 @@ use rustler::{Atom, Binary, Encoder, Env, NifResult, OwnedBinary, Term};
 pub fn declare_cursor(conn_id: &str, sql: &str, args: Vec<Term>) -> NifResult<String> {
     let conn_map = utils::safe_lock(&CONNECTION_REGISTRY, "declare_cursor conn_map")?;
 
-    if let Some(client) = conn_map.get(conn_id) {
-        let client = client.clone();
+    let client = conn_map
+        .get(conn_id)
+        .cloned()
+        .ok_or_else(|| rustler::Error::Term(Box::new("Invalid connection ID")))?;
 
-        let decoded_args: Vec<Value> = args
-            .into_iter()
-            .map(|t| utils::decode_term_to_value(t))
-            .collect::<Result<_, _>>()
-            .map_err(|e| rustler::Error::Term(Box::new(e)))?;
+    drop(conn_map); // Release lock before async operation
 
-        let (columns, rows) = TOKIO_RUNTIME.block_on(async {
-            let client_guard = utils::safe_lock_arc(&client, "declare_cursor client")?;
-            let conn_guard = utils::safe_lock_arc(&client_guard.client, "declare_cursor conn")?;
+    let decoded_args: Vec<Value> = args
+        .into_iter()
+        .map(|t| utils::decode_term_to_value(t))
+        .collect::<Result<_, _>>()
+        .map_err(|e| rustler::Error::Term(Box::new(e)))?;
 
-            let mut result_rows = conn_guard
-                .query(sql, decoded_args)
-                .await
-                .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
+    let (columns, rows) = TOKIO_RUNTIME.block_on(async {
+        let client_guard = utils::safe_lock_arc(&client, "declare_cursor client")?;
+        let conn_guard = utils::safe_lock_arc(&client_guard.client, "declare_cursor conn")?;
 
-            let mut columns: Vec<String> = Vec::new();
-            let mut rows: Vec<Vec<Value>> = Vec::new();
+        let mut result_rows = conn_guard
+            .query(sql, decoded_args)
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Query failed: {}", e))))?;
 
-            while let Some(row) = result_rows
-                .next()
-                .await
-                .map_err(|e| rustler::Error::Term(Box::new(e.to_string())))?
-            {
-                // Get column names on first row
-                if columns.is_empty() {
-                    for i in 0..row.column_count() {
-                        if let Some(name) = row.column_name(i) {
-                            columns.push(name.to_string());
-                        } else {
-                            columns.push(format!("col{}", i));
-                        }
+        let mut columns: Vec<String> = Vec::new();
+        let mut rows: Vec<Vec<Value>> = Vec::new();
+
+        while let Some(row) = result_rows
+            .next()
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(e.to_string())))?
+        {
+            // Get column names on first row
+            if columns.is_empty() {
+                for i in 0..row.column_count() {
+                    if let Some(name) = row.column_name(i) {
+                        columns.push(name.to_string());
+                    } else {
+                        columns.push(format!("col{}", i));
                     }
                 }
-
-                // Collect row values
-                let mut row_values = Vec::new();
-                for i in 0..columns.len() {
-                    let value = row.get(i as i32).unwrap_or(Value::Null);
-                    row_values.push(value);
-                }
-                rows.push(row_values);
             }
 
-            Ok::<_, rustler::Error>((columns, rows))
-        })?;
+            // Collect row values
+            let mut row_values = Vec::new();
+            for i in 0..columns.len() {
+                let value = row.get(i as i32).unwrap_or(Value::Null);
+                row_values.push(value);
+            }
+            rows.push(row_values);
+        }
 
-        let cursor_id = uuid::Uuid::new_v4().to_string();
-        let cursor_data = CursorData {
-            conn_id: conn_id.to_string(),
-            columns,
-            rows,
-            position: 0,
-        };
+        Ok::<_, rustler::Error>((columns, rows))
+    })?;
 
-        utils::safe_lock(&CURSOR_REGISTRY, "declare_cursor cursor_registry")?
-            .insert(cursor_id.clone(), cursor_data);
+    let cursor_id = uuid::Uuid::new_v4().to_string();
+    let cursor_data = CursorData {
+        conn_id: conn_id.to_string(),
+        columns,
+        rows,
+        position: 0,
+    };
 
-        Ok(cursor_id)
-    } else {
-        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
-    }
+    utils::safe_lock(&CURSOR_REGISTRY, "declare_cursor cursor_registry")?
+        .insert(cursor_id.clone(), cursor_data);
+
+    Ok(cursor_id)
 }
 
 /// Declare a cursor from within a transaction or connection context.
@@ -314,7 +315,10 @@ pub fn fetch_cursor<'a>(
                             owned.as_mut_slice().copy_from_slice(b);
                             Binary::from_owned(owned, env).encode(env)
                         }
-                        None => rustler::types::atom::nil().encode(env),
+                        None => {
+                            // Binary allocation failed - return error atom
+                            crate::constants::error().encode(env)
+                        }
                     },
                     Value::Null => rustler::types::atom::nil().encode(env),
                 })

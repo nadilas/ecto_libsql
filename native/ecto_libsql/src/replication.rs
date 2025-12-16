@@ -163,20 +163,13 @@ pub fn max_write_replication_index(conn_id: &str) -> NifResult<u64> {
         .clone();
     drop(conn_map);
 
-    let result = TOKIO_RUNTIME.block_on(async {
-        let client_guard = safe_lock_arc(&client, "max_write_replication_index client")
-            .map_err(|e| format!("Failed to lock client: {:?}", e))?;
+    // This is a synchronous call, no need for async block
+    let client_guard = safe_lock_arc(&client, "max_write_replication_index client")?;
 
-        // Call max_write_replication_index() which returns Option<FrameNo>
-        let max_write_frame = client_guard.db.max_write_replication_index();
+    // Call max_write_replication_index() which returns Option<FrameNo>
+    let max_write_frame = client_guard.db.max_write_replication_index();
 
-        Ok::<_, String>(max_write_frame.unwrap_or(0))
-    });
-
-    match result {
-        Ok(frame_no) => Ok(frame_no),
-        Err(e) => Err(rustler::Error::Term(Box::new(e))),
-    }
+    Ok(max_write_frame.unwrap_or(0))
 }
 
 /// **NOT SUPPORTED** - Freeze database operation is not implemented.

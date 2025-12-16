@@ -32,59 +32,58 @@ pub fn execute_batch<'a>(
     _mode: Atom,
     _syncx: Atom,
     statements: Vec<Term<'a>>,
-) -> Result<NifResult<Term<'a>>, rustler::Error> {
+) -> NifResult<Term<'a>> {
     let conn_map = safe_lock(&CONNECTION_REGISTRY, "execute_batch conn_map")?;
 
-    if let Some(client) = conn_map.get(conn_id) {
-        let client = client.clone();
+    let client = conn_map
+        .get(conn_id)
+        .cloned()
+        .ok_or_else(|| rustler::Error::Term(Box::new("Invalid connection ID")))?;
 
-        // Decode each statement with its arguments
-        let mut batch_stmts: Vec<(String, Vec<Value>)> = Vec::new();
-        for stmt_term in statements {
-            let (query, args): (String, Vec<Term>) = stmt_term.decode().map_err(|e| {
-                rustler::Error::Term(Box::new(format!("Failed to decode statement: {:?}", e)))
-            })?;
+    drop(conn_map); // Release lock before async operation
 
-            let decoded_args: Vec<Value> = args
-                .into_iter()
-                .map(|t| decode_term_to_value(t))
-                .collect::<Result<_, _>>()
-                .map_err(|e| rustler::Error::Term(Box::new(e)))?;
+    // Decode each statement with its arguments
+    let mut batch_stmts: Vec<(String, Vec<Value>)> = Vec::new();
+    for stmt_term in statements {
+        let (query, args): (String, Vec<Term>) = stmt_term.decode().map_err(|e| {
+            rustler::Error::Term(Box::new(format!("Failed to decode statement: {:?}", e)))
+        })?;
 
-            batch_stmts.push((query, decoded_args));
-        }
+        let decoded_args: Vec<Value> = args
+            .into_iter()
+            .map(|t| decode_term_to_value(t))
+            .collect::<Result<_, _>>()
+            .map_err(|e| rustler::Error::Term(Box::new(e)))?;
 
-        let result = TOKIO_RUNTIME.block_on(async {
-            let mut all_results: Vec<Term<'a>> = Vec::new();
+        batch_stmts.push((query, decoded_args));
+    }
 
-            // Execute each statement sequentially
-            for (sql, args) in batch_stmts.iter() {
-                let client_guard = safe_lock_arc(&client, "execute_batch client")?;
-                let conn_guard = safe_lock_arc(&client_guard.client, "execute_batch conn")?;
+    TOKIO_RUNTIME.block_on(async {
+        let mut all_results: Vec<Term<'a>> = Vec::new();
 
-                match conn_guard.query(sql, args.clone()).await {
-                    Ok(rows) => {
-                        let collected = collect_rows(env, rows)
-                            .await
-                            .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
-                        all_results.push(collected);
-                    }
-                    Err(e) => {
-                        return Err(rustler::Error::Term(Box::new(format!(
-                            "Batch statement error: {}",
-                            e
-                        ))));
-                    }
+        // Execute each statement sequentially
+        for (sql, args) in batch_stmts.iter() {
+            let client_guard = safe_lock_arc(&client, "execute_batch client")?;
+            let conn_guard = safe_lock_arc(&client_guard.client, "execute_batch conn")?;
+
+            match conn_guard.query(sql, args.clone()).await {
+                Ok(rows) => {
+                    let collected = collect_rows(env, rows)
+                        .await
+                        .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
+                    all_results.push(collected);
+                }
+                Err(e) => {
+                    return Err(rustler::Error::Term(Box::new(format!(
+                        "Batch statement error: {}",
+                        e
+                    ))));
                 }
             }
+        }
 
-            Ok(Ok(all_results.encode(env)))
-        });
-
-        return result;
-    } else {
-        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
-    }
+        Ok(all_results.encode(env))
+    })
 }
 
 /// Execute multiple SQL statements atomically within a transaction.
@@ -111,72 +110,70 @@ pub fn execute_transactional_batch<'a>(
     _mode: Atom,
     _syncx: Atom,
     statements: Vec<Term<'a>>,
-) -> Result<NifResult<Term<'a>>, rustler::Error> {
+) -> NifResult<Term<'a>> {
     let conn_map = safe_lock(&CONNECTION_REGISTRY, "execute_transactional_batch conn_map")?;
 
-    if let Some(client) = conn_map.get(conn_id) {
-        let client = client.clone();
+    let client = conn_map
+        .get(conn_id)
+        .cloned()
+        .ok_or_else(|| rustler::Error::Term(Box::new("Invalid connection ID")))?;
 
-        // Decode each statement with its arguments
-        let mut batch_stmts: Vec<(String, Vec<Value>)> = Vec::new();
-        for stmt_term in statements {
-            let (query, args): (String, Vec<Term>) = stmt_term.decode().map_err(|e| {
-                rustler::Error::Term(Box::new(format!("Failed to decode statement: {:?}", e)))
-            })?;
+    drop(conn_map); // Release lock before async operation
 
-            let decoded_args: Vec<Value> = args
-                .into_iter()
-                .map(|t| decode_term_to_value(t))
-                .collect::<Result<_, _>>()
-                .map_err(|e| rustler::Error::Term(Box::new(e)))?;
+    // Decode each statement with its arguments
+    let mut batch_stmts: Vec<(String, Vec<Value>)> = Vec::new();
+    for stmt_term in statements {
+        let (query, args): (String, Vec<Term>) = stmt_term.decode().map_err(|e| {
+            rustler::Error::Term(Box::new(format!("Failed to decode statement: {:?}", e)))
+        })?;
 
-            batch_stmts.push((query, decoded_args));
-        }
+        let decoded_args: Vec<Value> = args
+            .into_iter()
+            .map(|t| decode_term_to_value(t))
+            .collect::<Result<_, _>>()
+            .map_err(|e| rustler::Error::Term(Box::new(e)))?;
 
-        let result = TOKIO_RUNTIME.block_on(async {
-            // Start a transaction
-            let client_guard = safe_lock_arc(&client, "execute_transactional_batch client")?;
-            let conn_guard =
-                safe_lock_arc(&client_guard.client, "execute_transactional_batch conn")?;
+        batch_stmts.push((query, decoded_args));
+    }
 
-            let trx = conn_guard.transaction().await.map_err(|e| {
-                rustler::Error::Term(Box::new(format!("Begin transaction failed: {}", e)))
-            })?;
+    TOKIO_RUNTIME.block_on(async {
+        // Start a transaction
+        let client_guard = safe_lock_arc(&client, "execute_transactional_batch client")?;
+        let conn_guard = safe_lock_arc(&client_guard.client, "execute_transactional_batch conn")?;
 
-            let mut all_results: Vec<Term<'a>> = Vec::new();
+        let trx = conn_guard.transaction().await.map_err(|e| {
+            rustler::Error::Term(Box::new(format!("Begin transaction failed: {}", e)))
+        })?;
 
-            // Execute each statement in the transaction
-            for (sql, args) in batch_stmts.iter() {
-                match trx.query(sql, args.clone()).await {
-                    Ok(rows) => {
-                        let collected = collect_rows(env, rows)
-                            .await
-                            .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
-                        all_results.push(collected);
-                    }
-                    Err(e) => {
-                        // Rollback on error
-                        let _ = trx.rollback().await;
-                        return Err(rustler::Error::Term(Box::new(format!(
-                            "Batch statement error: {}",
-                            e
-                        ))));
-                    }
+        let mut all_results: Vec<Term<'a>> = Vec::new();
+
+        // Execute each statement in the transaction
+        for (sql, args) in batch_stmts.iter() {
+            match trx.query(sql, args.clone()).await {
+                Ok(rows) => {
+                    let collected = collect_rows(env, rows)
+                        .await
+                        .map_err(|e| rustler::Error::Term(Box::new(format!("{:?}", e))))?;
+                    all_results.push(collected);
+                }
+                Err(e) => {
+                    // Rollback on error
+                    let _ = trx.rollback().await;
+                    return Err(rustler::Error::Term(Box::new(format!(
+                        "Batch statement error: {}",
+                        e
+                    ))));
                 }
             }
+        }
 
-            // Commit the transaction
-            trx.commit()
-                .await
-                .map_err(|e| rustler::Error::Term(Box::new(format!("Commit failed: {}", e))))?;
+        // Commit the transaction
+        trx.commit()
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Commit failed: {}", e))))?;
 
-            Ok(Ok(all_results.encode(env)))
-        });
-
-        return result;
-    } else {
-        Err(rustler::Error::Term(Box::new("Invalid connection ID")))
-    }
+        Ok(all_results.encode(env))
+    })
 }
 
 /// Execute multiple SQL statements from a single string (semicolon-separated).

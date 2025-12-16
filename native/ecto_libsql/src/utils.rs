@@ -118,8 +118,14 @@ pub async fn enhance_constraint_error(
         })
         .collect();
 
+    // Helper function to quote SQLite identifiers safely
+    let quote_identifier = |id: &str| -> String {
+        // Escape any double quotes by doubling them, then wrap in double quotes
+        format!("\"{}\"", id.replace("\"", "\"\""))
+    };
+
     // Query SQLite for unique indexes on this table
-    let pragma_query = format!("PRAGMA index_list({})", table_name);
+    let pragma_query = format!("PRAGMA index_list({})", quote_identifier(table_name));
     let params: Vec<Value> = vec![];
     let mut rows = conn
         .query(&pragma_query, params)
@@ -145,7 +151,7 @@ pub async fn enhance_constraint_error(
         }
 
         // Query the columns in this index
-        let info_query = format!("PRAGMA index_info({})", index_name);
+        let info_query = format!("PRAGMA index_info({})", quote_identifier(&index_name));
         let info_params: Vec<Value> = vec![];
         let mut info_rows = conn
             .query(&info_query, info_params)
@@ -215,7 +221,10 @@ pub async fn collect_rows<'a>(env: Env<'a>, mut rows: Rows) -> Result<Term<'a>, 
                         owned.as_mut_slice().copy_from_slice(&val);
                         Binary::from_owned(owned, env).encode(env)
                     }
-                    None => nil().encode(env),
+                    None => {
+                        // Binary allocation failed - return error atom
+                        crate::constants::error().encode(env)
+                    }
                 },
                 Ok(Value::Null) => nil().encode(env),
                 Err(_) => nil().encode(env),

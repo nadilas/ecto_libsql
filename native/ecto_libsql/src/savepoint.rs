@@ -5,7 +5,7 @@
 /// checkpoints within a transaction that can be rolled back to independently.
 use crate::constants::*;
 use crate::decode::validate_savepoint_name;
-use crate::utils::safe_lock;
+use crate::transaction::TransactionEntryGuard;
 use libsql::Value;
 use rustler::{Atom, NifResult};
 
@@ -32,25 +32,20 @@ use rustler::{Atom, NifResult};
 pub fn savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom> {
     validate_savepoint_name(name)?;
 
-    let mut txn_registry = safe_lock(&TXN_REGISTRY, "savepoint")?;
-
-    let entry = txn_registry
-        .get_mut(trx_id)
-        .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
-
-    // Verify that the transaction belongs to the requesting connection
-    if entry.conn_id != conn_id {
-        return Err(rustler::Error::Term(Box::new(
-            "Transaction does not belong to this connection",
-        )));
-    }
+    // Take transaction entry with ownership verification using guard
+    let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 
     let sql = format!("SAVEPOINT {}", name);
 
-    TOKIO_RUNTIME
-        .block_on(async { entry.transaction.execute(&sql, Vec::<Value>::new()).await })
-        .map_err(|e| rustler::Error::Term(Box::new(format!("Savepoint failed: {}", e))))?;
+    TOKIO_RUNTIME.block_on(async {
+        guard
+            .transaction()?
+            .execute(&sql, Vec::<Value>::new())
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Savepoint failed: {}", e))))
+    })?;
 
+    // Guard automatically re-inserts the transaction on drop
     Ok(rustler::types::atom::ok())
 }
 
@@ -71,25 +66,20 @@ pub fn savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom> {
 pub fn release_savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom> {
     validate_savepoint_name(name)?;
 
-    let mut txn_registry = safe_lock(&TXN_REGISTRY, "release_savepoint")?;
-
-    let entry = txn_registry
-        .get_mut(trx_id)
-        .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
-
-    // Verify that the transaction belongs to the requesting connection
-    if entry.conn_id != conn_id {
-        return Err(rustler::Error::Term(Box::new(
-            "Transaction does not belong to this connection",
-        )));
-    }
+    // Take transaction entry with ownership verification using guard
+    let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 
     let sql = format!("RELEASE SAVEPOINT {}", name);
 
-    TOKIO_RUNTIME
-        .block_on(async { entry.transaction.execute(&sql, Vec::<Value>::new()).await })
-        .map_err(|e| rustler::Error::Term(Box::new(format!("Release savepoint failed: {}", e))))?;
+    TOKIO_RUNTIME.block_on(async {
+        guard
+            .transaction()?
+            .execute(&sql, Vec::<Value>::new())
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Release savepoint failed: {}", e))))
+    })?;
 
+    // Guard automatically re-inserts the transaction on drop
     Ok(rustler::types::atom::ok())
 }
 
@@ -110,26 +100,21 @@ pub fn release_savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<A
 pub fn rollback_to_savepoint(conn_id: &str, trx_id: &str, name: &str) -> NifResult<Atom> {
     validate_savepoint_name(name)?;
 
-    let mut txn_registry = safe_lock(&TXN_REGISTRY, "rollback_to_savepoint")?;
-
-    let entry = txn_registry
-        .get_mut(trx_id)
-        .ok_or_else(|| rustler::Error::Term(Box::new("Transaction not found")))?;
-
-    // Verify that the transaction belongs to the requesting connection
-    if entry.conn_id != conn_id {
-        return Err(rustler::Error::Term(Box::new(
-            "Transaction does not belong to this connection",
-        )));
-    }
+    // Take transaction entry with ownership verification using guard
+    let guard = TransactionEntryGuard::take(trx_id, conn_id)?;
 
     let sql = format!("ROLLBACK TO SAVEPOINT {}", name);
 
-    TOKIO_RUNTIME
-        .block_on(async { entry.transaction.execute(&sql, Vec::<Value>::new()).await })
-        .map_err(|e| {
-            rustler::Error::Term(Box::new(format!("Rollback to savepoint failed: {}", e)))
-        })?;
+    TOKIO_RUNTIME.block_on(async {
+        guard
+            .transaction()?
+            .execute(&sql, Vec::<Value>::new())
+            .await
+            .map_err(|e| {
+                rustler::Error::Term(Box::new(format!("Rollback to savepoint failed: {}", e)))
+            })
+    })?;
 
+    // Guard automatically re-inserts the transaction on drop
     Ok(rustler::types::atom::ok())
 }

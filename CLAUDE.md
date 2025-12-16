@@ -1141,7 +1141,7 @@ When working on this codebase:
 
 ## Summary
 
-EctoLibSql is a production-ready Ecto adapter for LibSQL/Turso with full Ecto support, three connection modes, advanced features (vector search, encryption, streaming), zero panic risk, lots of tests, and comprehensive documentation.
+EctoLibSql is a production-ready Ecto adapter for LibSQL/Turso with full Ecto support, three connection modes, advanced features (vector search, encryption, streaming), zero panic risk, extensive test coverage, and comprehensive documentation.
 
 **Key Principle**: Safety first. All Rust code uses proper error handling to protect the BEAM VM. Errors are returned as tuples that can be supervised gracefully.
 

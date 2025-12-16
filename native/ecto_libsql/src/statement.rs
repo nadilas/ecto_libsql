@@ -35,30 +35,34 @@ pub fn prepare_statement(conn_id: &str, sql: &str) -> NifResult<String> {
             .cloned()
             .ok_or_else(|| rustler::Error::Term(Box::new("Invalid connection ID")))?
     };
-    {
-        let sql_to_prepare = sql.to_string();
 
-        let stmt_result = TOKIO_RUNTIME.block_on(async {
-            let client_guard = utils::safe_lock_arc(&client, "prepare_statement client")?;
-            let conn_guard = utils::safe_lock_arc(&client_guard.client, "prepare_statement conn")?;
+    let sql_to_prepare = sql.to_string();
 
-            conn_guard
-                .prepare(&sql_to_prepare)
-                .await
-                .map_err(|e| rustler::Error::Term(Box::new(format!("Prepare failed: {}", e))))
-        });
+    // Clone the inner connection Arc and drop the outer lock before async operations
+    let connection = {
+        let client_guard = utils::safe_lock_arc(&client, "prepare_statement client")?;
+        client_guard.client.clone()
+    }; // Outer lock dropped here
 
-        match stmt_result {
-            Ok(stmt) => {
-                let stmt_id = uuid::Uuid::new_v4().to_string();
-                utils::safe_lock(&STMT_REGISTRY, "prepare_statement stmt_registry")?.insert(
-                    stmt_id.clone(),
-                    (conn_id.to_string(), Arc::new(Mutex::new(stmt))),
-                );
-                Ok(stmt_id)
-            }
-            Err(e) => Err(e),
+    let stmt_result = TOKIO_RUNTIME.block_on(async {
+        let conn_guard = utils::safe_lock_arc(&connection, "prepare_statement conn")?;
+
+        conn_guard
+            .prepare(&sql_to_prepare)
+            .await
+            .map_err(|e| rustler::Error::Term(Box::new(format!("Prepare failed: {}", e))))
+    });
+
+    match stmt_result {
+        Ok(stmt) => {
+            let stmt_id = uuid::Uuid::new_v4().to_string();
+            utils::safe_lock(&STMT_REGISTRY, "prepare_statement stmt_registry")?.insert(
+                stmt_id.clone(),
+                (conn_id.to_string(), Arc::new(Mutex::new(stmt))),
+            );
+            Ok(stmt_id)
         }
+        Err(e) => Err(e),
     }
 }
 
@@ -179,8 +183,6 @@ pub fn execute_prepared<'a>(
         .map(|t| utils::decode_term_to_value(t))
         .collect::<Result<_, _>>()
         .map_err(|e| rustler::Error::Term(Box::new(e)))?;
-
-    let _is_sync = !matches!(utils::detect_query_type(sql_hint), utils::QueryType::Select);
 
     drop(stmt_registry); // Release lock before async operation
     drop(conn_map); // Release lock before async operation

@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Major Rust Code Refactoring (Modularisation)**
-  - Split monolithic `lib.rs` (2,302 lines) into 14 focused, single-responsibility modules
+  - Split monolithic `lib.rs` (2,302 lines) into 13 focused, single-responsibility modules
   - **Module structure by feature area**:
     - `connection.rs` - Connection lifecycle, establishment, and state management
     - `query.rs` - Basic query execution and result handling
@@ -37,6 +37,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Impact**: Significantly improved code navigation, maintenance, and onboarding for contributors
 
 ### Fixed
+
+- **Critical Rust NIF Thread Safety and Scheduler Issues**
+  - **Registry Lock Management**: Fixed all functions to drop registry locks before entering `TOKIO_RUNTIME.block_on()` async blocks
+    - `execute_batch()` and `execute_transactional_batch()` in `batch.rs`: Simplified function signatures, dropped `conn_map` lock before async operations
+    - `declare_cursor()` in `cursor.rs`: Dropped `conn_map` lock before async block
+    - `do_sync()` in `query.rs`: Dropped `conn_map` lock before async block
+    - `savepoint()`, `release_savepoint()`, and `rollback_to_savepoint()` in `savepoint.rs`: Now use `TransactionEntryGuard` pattern to avoid holding `TXN_REGISTRY` lock during async operations
+    - `prepare_statement()` in `statement.rs`: Now clones inner connection Arc and drops client lock before async block, preventing locks from being held across await points
+    - `begin_transaction()` and `begin_transaction_with_behavior()` in `transaction.rs`: Now clone inner connection Arc and drop all locks before async transaction creation, preventing locks from being held across await points
+  - **DirtyIo Scheduler Annotations**: Added `#[rustler::nif(schedule = "DirtyIo")]` to blocking NIFs
+    - `last_insert_rowid()`, `changes()`, and `is_autocommit()` in `metadata.rs`
+    - Prevents blocking the BEAM scheduler during I/O operations
+  - **Atom Naming Consistency**: Renamed `remote_primary` atom to `remote` in `constants.rs` and `decode.rs`
+    - Fixes mismatch between Rust atom (`remote_primary()`) and Elixir convention (`:remote`)
+    - `decode_mode()` now correctly decodes `:remote` atoms from Elixir
+  - **Binary Allocation Error Handling**: Return `:error` atom instead of `nil` when binary allocation fails
+    - Updated `cursor.rs` and `utils.rs` to use `:error` atom for `OwnedBinary::new()` allocation failures
+    - Provides clearer indication of allocation errors in query results
+  - **SQL Identifier Quoting**: Added proper quoting for SQLite identifiers in PRAGMA queries (`utils.rs`)
+    - Table and index names are now properly quoted with double quotes
+    - Internal double quotes are escaped by doubling them
+    - Defensive programming against potential edge cases with special characters in identifiers
+  - **Performance Optimizations**:
+    - **Replication**: `max_write_replication_index()` in `replication.rs` now calls synchronous method directly instead of wrapping in `TOKIO_RUNTIME.block_on()`
+      - Eliminates unnecessary async overhead for synchronous operations
+    - **Connection**: `connect()` in `connection.rs` now uses shared global `TOKIO_RUNTIME` instead of creating a new runtime per connection
+      - Prevents resource exhaustion under high connection rates
+      - Eliminates expensive runtime creation overhead (each runtime spawns multiple threads)
+      - Aligns with pattern used by all other operations in the codebase
+  - **Impact**: Eliminates potential deadlocks, prevents BEAM scheduler blocking, ensures proper Elixir-Rust atom communication, improves error visibility, reduces overhead for replication index queries
 
 - **Constraint Error Message Handling**
   - Enhanced constraint name extraction to support index names in error messages

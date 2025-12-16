@@ -44,9 +44,10 @@ lazy_static! {
 // Atom declarations for EctoLibSql - used as return values and option identifiers in the NIF interface
 atoms! {
     local,
-    remote_primary,
+    remote,
     remote_replica,
     ok,
+    error,
     conn_id,
     trx_id,
     stmt_id,
