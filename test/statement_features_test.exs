@@ -85,17 +85,13 @@ defmodule EctoLibSql.StatementFeaturesTest do
       EctoLibSql.Native.close_stmt(stmt_id)
     end
 
-    test "column_name returns error for out-of-bounds indices", %{state: state} do
+    test "stmt_column_name handles out-of-bounds and valid indices", %{state: state} do
       # Prepare statement
       {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "SELECT * FROM users WHERE id = ?")
 
       # Get column count
       {:ok, count} = EctoLibSql.Native.stmt_column_count(state, stmt_id)
       assert count == 3
-
-      # Index >= count should return error
-      assert {:error, _} = EctoLibSql.Native.stmt_column_name(state, stmt_id, 3)
-      assert {:error, _} = EctoLibSql.Native.stmt_column_name(state, stmt_id, 100)
 
       # Valid indices (0 to count-1) should succeed
       {:ok, name_0} = EctoLibSql.Native.stmt_column_name(state, stmt_id, 0)
@@ -104,17 +100,11 @@ defmodule EctoLibSql.StatementFeaturesTest do
       {:ok, name_2} = EctoLibSql.Native.stmt_column_name(state, stmt_id, 2)
       assert name_2 == "age"
 
-      # Cleanup
-      EctoLibSql.Native.close_stmt(stmt_id)
-    end
-
-    test "stmt_column_name returns error for invalid index", %{state: state} do
-      {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "SELECT * FROM users")
-      {:ok, count} = EctoLibSql.Native.stmt_column_count(state, stmt_id)
-
-      # Out of bounds should return error
+      # Out-of-bounds indices should return error
       assert {:error, _} = EctoLibSql.Native.stmt_column_name(state, stmt_id, count)
+      assert {:error, _} = EctoLibSql.Native.stmt_column_name(state, stmt_id, 100)
 
+      # Cleanup
       EctoLibSql.Native.close_stmt(stmt_id)
     end
   end
