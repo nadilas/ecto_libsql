@@ -216,36 +216,31 @@ pub async fn collect_rows<'a>(env: Env<'a>, mut rows: Rows) -> Result<Term<'a>, 
                 Ok(Value::Text(val)) => val.encode(env),
                 Ok(Value::Integer(val)) => val.encode(env),
                 Ok(Value::Real(val)) => val.encode(env),
-                Ok(Value::Blob(val)) => match OwnedBinary::new(val.len()) {
-                    Some(mut owned) => {
+                Ok(Value::Blob(val)) => OwnedBinary::new(val.len())
+                    .ok_or_else(|| {
+                        let col_name = column_names
+                            .get(i as usize)
+                            .unwrap_or(&"unknown".to_string())
+                            .clone();
+                        rustler::Error::Term(Box::new(format!(
+                            "Failed to allocate binary for column '{}' (index {})",
+                            col_name, i
+                        )))
+                    })
+                    .map(|mut owned| {
                         owned.as_mut_slice().copy_from_slice(&val);
                         Binary::from_owned(owned, env).encode(env)
-                    }
-                    None => {
-                        // Binary allocation failed - return error atom
-                        eprintln!(
-                            "WARNING: Failed to allocate binary for column '{}' (index {})",
-                            column_names
-                                .get(i as usize)
-                                .unwrap_or(&"unknown".to_string()),
-                            i
-                        );
-                        crate::constants::error().encode(env)
-                    }
-                },
+                    })?,
                 Ok(Value::Null) => nil().encode(env),
                 Err(err) => {
-                    // Log the error with context to aid debugging
-                    eprintln!(
-                        "WARNING: Failed to read column '{}' (index {}): {}",
-                        column_names
-                            .get(i as usize)
-                            .unwrap_or(&"unknown".to_string()),
-                        i,
-                        err
-                    );
-                    // Return error atom instead of nil to surface the issue
-                    crate::constants::error().encode(env)
+                    let col_name = column_names
+                        .get(i as usize)
+                        .unwrap_or(&"unknown".to_string())
+                        .clone();
+                    return Err(rustler::Error::Term(Box::new(format!(
+                        "Failed to read column '{}' (index {}): {}",
+                        col_name, i, err
+                    ))));
                 }
             };
             row_terms.push(term);

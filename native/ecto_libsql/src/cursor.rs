@@ -301,32 +301,33 @@ pub fn fetch_cursor<'a>(
     // Convert to Elixir terms
     let elixir_columns: Vec<Term> = cursor.columns.iter().map(|c| c.encode(env)).collect();
 
-    let elixir_rows: Vec<Term> = fetched_rows
+    let elixir_rows: Result<Vec<Term>, rustler::Error> = fetched_rows
         .iter()
         .map(|row| {
-            let row_terms: Vec<Term> = row
+            let row_terms: Result<Vec<Term>, rustler::Error> = row
                 .iter()
                 .map(|val| match val {
-                    Value::Text(s) => s.encode(env),
-                    Value::Integer(i) => i.encode(env),
-                    Value::Real(f) => f.encode(env),
-                    Value::Blob(b) => match OwnedBinary::new(b.len()) {
-                        Some(mut owned) => {
+                    Value::Text(s) => Ok(s.encode(env)),
+                    Value::Integer(i) => Ok(i.encode(env)),
+                    Value::Real(f) => Ok(f.encode(env)),
+                    Value::Blob(b) => OwnedBinary::new(b.len())
+                        .ok_or_else(|| {
+                            rustler::Error::Term(Box::new(
+                                "Failed to allocate binary for blob data",
+                            ))
+                        })
+                        .map(|mut owned| {
                             owned.as_mut_slice().copy_from_slice(b);
                             Binary::from_owned(owned, env).encode(env)
-                        }
-                        None => {
-                            // Binary allocation failed - return error atom
-                            crate::constants::error().encode(env)
-                        }
-                    },
-                    Value::Null => rustler::types::atom::nil().encode(env),
+                        }),
+                    Value::Null => Ok(rustler::types::atom::nil().encode(env)),
                 })
                 .collect();
-            row_terms.encode(env)
+            row_terms.map(|terms| terms.encode(env))
         })
         .collect();
 
+    let elixir_rows = elixir_rows?;
     let result = (elixir_columns, elixir_rows, fetch_count);
     Ok(result.encode(env))
 }

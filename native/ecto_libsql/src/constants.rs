@@ -11,9 +11,23 @@ use tokio::runtime::Runtime;
 
 use crate::models::{CursorData, LibSQLConn, TransactionEntry};
 
+/// Type alias to reduce complexity of the statement registry
+type StatementEntry = (String, Arc<Mutex<libsql::Statement>>);
+
 /// Global Tokio runtime for async operations
-pub static TOKIO_RUNTIME: Lazy<Runtime> =
-    Lazy::new(|| Runtime::new().expect("Failed to create Tokio runtime"));
+///
+/// IMPORTANT: This panics if Tokio runtime creation fails, which can only happen in
+/// extremely rare circumstances (e.g., system has no available threads). In normal
+/// operation, runtime creation succeeds immediately on the first NIF call.
+///
+/// If you see "Failed to initialize Tokio runtime" panics, check:
+/// - System has available threads
+/// - Ulimit settings (-u) are not too restrictive
+/// - System memory is available
+pub static TOKIO_RUNTIME: Lazy<Runtime> = Lazy::new(|| {
+    Runtime::new()
+        .expect("Failed to initialize Tokio runtime - check system resources and thread limits")
+});
 
 /// Default timeout for sync operations (in seconds)
 pub const DEFAULT_SYNC_TIMEOUT_SECS: u64 = 30;
@@ -32,7 +46,7 @@ lazy_static! {
 
 // Global registry for prepared statements - Maps statement ID to (connection_id, cached_statement)
 lazy_static! {
-    pub static ref STMT_REGISTRY: Mutex<HashMap<String, (String, Arc<Mutex<libsql::Statement>>)>> =
+    pub static ref STMT_REGISTRY: Mutex<HashMap<String, StatementEntry>> =
         Mutex::new(HashMap::new());
 }
 

@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Prepared Statement Column Introspection Tests**
+  - Enabled previously skipped tests for `stmt_column_count/2` and `stmt_column_name/3` features
+  - Tests verify column metadata retrieval from prepared statements works correctly
+  - Fixed test references to use correct NIF function names
+  - Both simple and complex query scenarios now tested and passing
+
 - **Critical Rust NIF Thread Safety and Scheduler Issues**
   - **Registry Lock Management**: Fixed all functions to drop registry locks before entering `TOKIO_RUNTIME.block_on()` async blocks
     - `execute_batch()` and `execute_transactional_batch()` in `batch.rs`: Simplified function signatures, dropped `conn_map` lock before async operations

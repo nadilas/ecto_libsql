@@ -74,7 +74,7 @@ pub fn verify_cursor_ownership(cursor: &CursorData, conn_id: &str) -> Result<(),
 pub fn validate_savepoint_name(name: &str) -> Result<(), rustler::Error> {
     if name.is_empty()
         || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-        || name.chars().next().map_or(true, |c| c.is_ascii_digit())
+        || name.chars().next().is_none_or(|c| c.is_ascii_digit())
     {
         return Err(rustler::Error::Term(Box::new(
             "Invalid savepoint name: must be a valid SQL identifier",

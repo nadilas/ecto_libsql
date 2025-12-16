@@ -19,7 +19,6 @@ use crate::{
     models::TransactionEntry,
     utils,
 };
-use libsql::TransactionBehavior;
 use rustler::{Atom, Env, NifResult, Term};
 use std::sync::MutexGuard;
 
@@ -215,12 +214,11 @@ pub fn begin_transaction_with_behavior(conn_id: &str, behavior: Atom) -> NifResu
     let trx_behavior = match decode::decode_transaction_behavior(behavior) {
         Some(b) => b,
         None => {
-            // Log warning for unrecognized behavior atom
-            eprintln!(
-                "WARNING: Unrecognized transaction behavior atom: {:?}. Defaulting to Deferred.",
-                behavior
-            );
-            TransactionBehavior::Deferred
+            // Unrecognized behavior - return error to Elixir for proper logging
+            // This allows the application to handle unknown behaviors explicitly
+            return Err(rustler::Error::Term(Box::new(
+                format!("Invalid transaction behavior: {:?}. Use :deferred, :immediate, :exclusive, or :read_only", behavior)
+            )));
         }
     };
 

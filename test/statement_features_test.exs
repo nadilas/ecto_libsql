@@ -33,24 +33,27 @@ defmodule EctoLibSql.StatementFeaturesTest do
   end
 
   # ============================================================================
-  # Statement.columns() - NOT IMPLEMENTED ❌
+  # Statement.columns() - SUPPORTED ✅
   # ============================================================================
 
-  describe "Statement.columns() - NOT IMPLEMENTED" do
-    @describetag :skip
+  describe "Statement.columns()" do
 
     test "get column metadata from prepared statement", %{state: state} do
       # Prepare statement
       {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "SELECT * FROM users WHERE id = ?")
 
-      # Get columns
-      assert {:ok, columns} = EctoLibSql.Native.get_statement_columns(stmt_id)
+      # Get column count
+      {:ok, count} = EctoLibSql.Native.stmt_column_count(state, stmt_id)
+      assert count == 3
 
-      assert length(columns) == 3
+      # Get column names
+      {:ok, name_0} = EctoLibSql.Native.stmt_column_name(state, stmt_id, 0)
+      {:ok, name_1} = EctoLibSql.Native.stmt_column_name(state, stmt_id, 1)
+      {:ok, name_2} = EctoLibSql.Native.stmt_column_name(state, stmt_id, 2)
 
-      assert %{name: "id", decl_type: "INTEGER"} = Enum.at(columns, 0)
-      assert %{name: "name", decl_type: "TEXT"} = Enum.at(columns, 1)
-      assert %{name: "age", decl_type: "INTEGER"} = Enum.at(columns, 2)
+      assert name_0 == "id"
+      assert name_1 == "name"
+      assert name_2 == "age"
 
       # Cleanup
       EctoLibSql.Native.close_stmt(stmt_id)
@@ -81,15 +84,19 @@ defmodule EctoLibSql.StatementFeaturesTest do
           """
         )
 
-      # Get columns
-      assert {:ok, columns} = EctoLibSql.Native.get_statement_columns(stmt_id)
+      # Get column count
+      {:ok, count} = EctoLibSql.Native.stmt_column_count(state, stmt_id)
+      assert count == 3
 
-      assert length(columns) == 3
+      # Get column names
+      {:ok, name_0} = EctoLibSql.Native.stmt_column_name(state, stmt_id, 0)
+      {:ok, name_1} = EctoLibSql.Native.stmt_column_name(state, stmt_id, 1)
+      {:ok, name_2} = EctoLibSql.Native.stmt_column_name(state, stmt_id, 2)
 
       # Column names from query
-      assert %{name: "user_id"} = Enum.at(columns, 0)
-      assert %{name: "name"} = Enum.at(columns, 1)
-      assert %{name: "post_count"} = Enum.at(columns, 2)
+      assert name_0 == "user_id"
+      assert name_1 == "name"
+      assert name_2 == "post_count"
 
       # Cleanup
       EctoLibSql.Native.close_stmt(stmt_id)

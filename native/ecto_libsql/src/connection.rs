@@ -96,8 +96,8 @@ pub fn connect(opts: Term, mode: Term) -> NifResult<String> {
 
                         builder.build().await
                     } else {
-                        // else value will return string error
-                        return Err(rustler::Error::Term(Box::new(format!("Unknown mode",))));
+                        // Unknown connection mode
+                        return Err(rustler::Error::Term(Box::new("Unknown mode".to_string())));
                     }
                 }
 
