@@ -37,7 +37,6 @@ defmodule EctoLibSql.StatementFeaturesTest do
   # ============================================================================
 
   describe "Statement.columns()" do
-
     test "get column metadata from prepared statement", %{state: state} do
       # Prepare statement
       {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "SELECT * FROM users WHERE id = ?")
