@@ -223,11 +223,30 @@ pub async fn collect_rows<'a>(env: Env<'a>, mut rows: Rows) -> Result<Term<'a>, 
                     }
                     None => {
                         // Binary allocation failed - return error atom
+                        eprintln!(
+                            "WARNING: Failed to allocate binary for column '{}' (index {})",
+                            column_names
+                                .get(i as usize)
+                                .unwrap_or(&"unknown".to_string()),
+                            i
+                        );
                         crate::constants::error().encode(env)
                     }
                 },
                 Ok(Value::Null) => nil().encode(env),
-                Err(_) => nil().encode(env),
+                Err(err) => {
+                    // Log the error with context to aid debugging
+                    eprintln!(
+                        "WARNING: Failed to read column '{}' (index {}): {}",
+                        column_names
+                            .get(i as usize)
+                            .unwrap_or(&"unknown".to_string()),
+                        i,
+                        err
+                    );
+                    // Return error atom instead of nil to surface the issue
+                    crate::constants::error().encode(env)
+                }
             };
             row_terms.push(term);
         }
