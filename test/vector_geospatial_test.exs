@@ -16,6 +16,7 @@ defmodule Ecto.Vector.GeospatialTest do
       field(:name, :string)
       field(:latitude, :float)
       field(:longitude, :float)
+      # Binary vector data stored as F32_BLOB
       field(:embedding, :string)
       field(:city, :string)
       field(:country, :string)
