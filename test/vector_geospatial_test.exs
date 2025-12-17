@@ -750,8 +750,8 @@ defmodule Ecto.Vector.GeospatialTest do
   end
 
   describe "vector error cases" do
-    test "handles mismatched vector dimensions gracefully" do
-      # This test documents behavior when attempting mismatched dimensions
+    test "queries vectors with matching dimensions" do
+      # Test successful query with matching 2D vectors
       # Create table with 2D vectors
       embedding_2d = EctoLibSql.Native.vector([0.5, 0.5])
 
