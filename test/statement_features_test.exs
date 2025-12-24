@@ -231,6 +231,159 @@ defmodule EctoLibSql.StatementFeaturesTest do
   end
 
   # ============================================================================
+  # Statement.reset() - NEW IMPLEMENTATION ✅
+  # ============================================================================
+
+  describe "Statement.reset() explicit reset ✅" do
+    test "reset_stmt clears statement state explicitly", %{state: state} do
+      {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "INSERT INTO users VALUES (?, ?, ?)")
+
+      # Execute first insertion
+      {:ok, _} =
+        EctoLibSql.Native.execute_stmt(state, stmt_id, "INSERT INTO users VALUES (?, ?, ?)", [
+          1,
+          "Alice",
+          30
+        ])
+
+      # Explicitly reset the statement
+      assert :ok = EctoLibSql.Native.reset_stmt(state, stmt_id)
+
+      # Execute second insertion after reset
+      {:ok, _} =
+        EctoLibSql.Native.execute_stmt(state, stmt_id, "INSERT INTO users VALUES (?, ?, ?)", [
+          2,
+          "Bob",
+          25
+        ])
+
+      # Verify both inserts succeeded
+      {:ok, _, result, _} =
+        EctoLibSql.handle_execute("SELECT name FROM users ORDER BY id", [], [], state)
+
+      assert [["Alice"], ["Bob"]] = result.rows
+
+      EctoLibSql.Native.close_stmt(stmt_id)
+    end
+
+    test "reset_stmt can be called multiple times", %{state: state} do
+      {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "INSERT INTO users VALUES (?, ?, ?)")
+
+      # Execute and reset multiple times
+      for i <- 1..5 do
+        {:ok, _} =
+          EctoLibSql.Native.execute_stmt(state, stmt_id, "INSERT INTO users VALUES (?, ?, ?)", [
+            i,
+            "User#{i}",
+            20 + i
+          ])
+
+        # Explicit reset
+        assert :ok = EctoLibSql.Native.reset_stmt(state, stmt_id)
+      end
+
+      # Verify all inserts
+      {:ok, _, result, _} =
+        EctoLibSql.handle_execute("SELECT COUNT(*) FROM users", [], [], state)
+
+      assert [[5]] = result.rows
+
+      EctoLibSql.Native.close_stmt(stmt_id)
+    end
+
+    test "reset_stmt returns error for invalid statement", %{state: state} do
+      # Try to reset non-existent statement
+      assert {:error, _} = EctoLibSql.Native.reset_stmt(state, "invalid_stmt_id")
+    end
+  end
+
+  # ============================================================================
+  # Statement.get_stmt_columns() - NEW IMPLEMENTATION ✅
+  # ============================================================================
+
+  describe "Statement.get_stmt_columns() full metadata ✅" do
+    test "get_stmt_columns returns column metadata", %{state: state} do
+      {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "SELECT * FROM users WHERE id = ?")
+
+      # Get full column metadata
+      {:ok, columns} = EctoLibSql.Native.get_stmt_columns(state, stmt_id)
+
+      # Should return list of tuples: {name, origin_name, decl_type}
+      assert is_list(columns)
+      assert length(columns) == 3
+
+      # Verify column metadata structure
+      [
+        {col1_name, col1_origin, col1_type},
+        {col2_name, col2_origin, col2_type},
+        {col3_name, col3_origin, col3_type}
+      ] = columns
+
+      # Check column 1 (id)
+      assert col1_name == "id"
+      assert col1_origin == "id"
+      assert col1_type == "INTEGER"
+
+      # Check column 2 (name)
+      assert col2_name == "name"
+      assert col2_origin == "name"
+      assert col2_type == "TEXT"
+
+      # Check column 3 (age)
+      assert col3_name == "age"
+      assert col3_origin == "age"
+      assert col3_type == "INTEGER"
+
+      EctoLibSql.Native.close_stmt(stmt_id)
+    end
+
+    test "get_stmt_columns works with aliased columns", %{state: state} do
+      {:ok, stmt_id} =
+        EctoLibSql.Native.prepare(
+          state,
+          "SELECT id as user_id, name as full_name, age as years FROM users"
+        )
+
+      {:ok, columns} = EctoLibSql.Native.get_stmt_columns(state, stmt_id)
+
+      assert length(columns) == 3
+
+      # Check aliased column names
+      [{col1_name, _, _}, {col2_name, _, _}, {col3_name, _, _}] = columns
+
+      assert col1_name == "user_id"
+      assert col2_name == "full_name"
+      assert col3_name == "years"
+
+      EctoLibSql.Native.close_stmt(stmt_id)
+    end
+
+    test "get_stmt_columns works with expressions", %{state: state} do
+      {:ok, stmt_id} =
+        EctoLibSql.Native.prepare(
+          state,
+          "SELECT COUNT(*) as total, MAX(age) as oldest FROM users"
+        )
+
+      {:ok, columns} = EctoLibSql.Native.get_stmt_columns(state, stmt_id)
+
+      assert length(columns) == 2
+
+      [{col1_name, _, _}, {col2_name, _, _}] = columns
+
+      assert col1_name == "total"
+      assert col2_name == "oldest"
+
+      EctoLibSql.Native.close_stmt(stmt_id)
+    end
+
+    test "get_stmt_columns returns error for invalid statement", %{state: state} do
+      # Try to get columns for non-existent statement
+      assert {:error, _} = EctoLibSql.Native.get_stmt_columns(state, "invalid_stmt_id")
+    end
+  end
+
+  # ============================================================================
   # Statement parameter introspection - NOT IMPLEMENTED ❌
   # ============================================================================
 

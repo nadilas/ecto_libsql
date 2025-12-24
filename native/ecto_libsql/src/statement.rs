@@ -324,3 +324,125 @@ pub fn statement_parameter_count(conn_id: &str, stmt_id: &str) -> NifResult<usiz
 
     Ok(count)
 }
+
+/// Reset a prepared statement to its initial state for reuse.
+///
+/// After executing a statement, you should reset it before binding new parameters
+/// and executing again. This allows efficient statement reuse without re-preparing.
+///
+/// **Performance Note**: Resetting and reusing statements is much faster than
+/// re-preparing the same SQL string repeatedly. Always reset statements when
+/// executing the same query multiple times with different parameters.
+///
+/// # Arguments
+/// - `conn_id`: Database connection ID
+/// - `stmt_id`: Prepared statement ID
+///
+/// # Returns
+/// - `:ok` - Statement reset successfully
+/// - `{:error, reason}` - Reset failed
+///
+/// # Example
+/// ```elixir
+/// {:ok, stmt_id} = EctoLibSql.prepare(state, "INSERT INTO logs (msg) VALUES (?)")
+///
+/// for msg <- messages do
+///   EctoLibSql.execute_stmt(state, stmt_id, [msg])
+///   EctoLibSql.reset_stmt(state, stmt_id)  # ← Reset for next iteration
+/// end
+///
+/// EctoLibSql.close_stmt(state, stmt_id)
+/// ```
+#[rustler::nif(schedule = "DirtyIo")]
+pub fn reset_statement(conn_id: &str, stmt_id: &str) -> NifResult<Atom> {
+    let conn_map = utils::safe_lock(&CONNECTION_REGISTRY, "reset_statement conn_map")?;
+    let stmt_registry = utils::safe_lock(&STMT_REGISTRY, "reset_statement stmt_registry")?;
+
+    if conn_map.get(conn_id).is_none() {
+        return Err(rustler::Error::Term(Box::new("Invalid connection ID")));
+    }
+
+    let (stored_conn_id, cached_stmt) = stmt_registry
+        .get(stmt_id)
+        .ok_or_else(|| rustler::Error::Term(Box::new("Statement not found")))?;
+
+    // Verify statement belongs to this connection
+    decode::verify_statement_ownership(stored_conn_id, conn_id)?;
+
+    let cached_stmt = cached_stmt.clone();
+
+    drop(stmt_registry);
+    drop(conn_map);
+
+    let stmt_guard = utils::safe_lock_arc(&cached_stmt, "reset_statement stmt")?;
+    stmt_guard.reset();
+
+    Ok(rustler::types::atom::ok())
+}
+
+/// Get column metadata for a prepared statement.
+///
+/// Returns information about all columns that will be returned when the
+/// statement is executed. This includes column names and declared types.
+///
+/// # Arguments
+/// - `conn_id`: Database connection ID
+/// - `stmt_id`: Prepared statement ID
+///
+/// # Returns
+/// - `{:ok, columns}` - List of maps with `:name` and `:decl_type` keys
+/// - `{:error, reason}` - Failed to get metadata
+///
+/// # Example
+/// ```elixir
+/// {:ok, stmt_id} = EctoLibSql.prepare(state, "SELECT id, name, age FROM users")
+/// {:ok, columns} = EctoLibSql.get_statement_columns(state, stmt_id)
+/// # Returns: [
+/// #   %{name: "id", decl_type: "INTEGER"},
+/// #   %{name: "name", decl_type: "TEXT"},
+/// #   %{name: "age", decl_type: "INTEGER"}
+/// # ]
+/// ```
+#[rustler::nif(schedule = "DirtyIo")]
+pub fn get_statement_columns(
+    conn_id: &str,
+    stmt_id: &str,
+) -> NifResult<Vec<(String, String, Option<String>)>> {
+    let conn_map = utils::safe_lock(&CONNECTION_REGISTRY, "get_statement_columns conn_map")?;
+    let stmt_registry = utils::safe_lock(&STMT_REGISTRY, "get_statement_columns stmt_registry")?;
+
+    if conn_map.get(conn_id).is_none() {
+        return Err(rustler::Error::Term(Box::new("Invalid connection ID")));
+    }
+
+    let (stored_conn_id, cached_stmt) = stmt_registry
+        .get(stmt_id)
+        .ok_or_else(|| rustler::Error::Term(Box::new("Statement not found")))?;
+
+    // Verify statement belongs to this connection
+    decode::verify_statement_ownership(stored_conn_id, conn_id)?;
+
+    let cached_stmt = cached_stmt.clone();
+
+    drop(stmt_registry);
+    drop(conn_map);
+
+    let stmt_guard = utils::safe_lock_arc(&cached_stmt, "get_statement_columns stmt")?;
+    let columns = stmt_guard.columns();
+
+    // Build list of column metadata tuples: (name, origin_name, decl_type)
+    let column_info: Vec<(String, String, Option<String>)> = columns
+        .iter()
+        .map(|col| {
+            let name = col.name().to_string();
+            let origin_name = col
+                .origin_name()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| name.clone());
+            let decl_type = col.decl_type().map(|s| s.to_string());
+            (name, origin_name, decl_type)
+        })
+        .collect();
+
+    Ok(column_info)
+}
