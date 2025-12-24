@@ -90,7 +90,7 @@ For lower-level control, you can use the DBConnection interface directly:
 
 **Advanced Features**
 - Vector similarity search
-- Database encryption (AES-256-CBC for local and embedded replica databases)
+- Database encryption (local AES-256-CBC and Turso remote encryption)
 - WebSocket and HTTP protocols
 - Cursor-based streaming for large result sets (via DBConnection interface)
 - Advanced replica synchronisation with frame tracking
@@ -303,22 +303,40 @@ distance_fn = EctoLibSql.Native.vector_distance_cos("embedding", query_vector)
 
 ### Database Encryption
 
+EctoLibSql supports two types of encryption:
+- **Local encryption**: AES-256-CBC encryption for local database files (at-rest encryption)
+- **Remote encryption**: Turso encrypted databases (encryption key sent with each request)
+
 ```elixir
-# Encrypted local database
+# Encrypted local database (local file encryption)
 {:ok, conn} = DBConnection.start_link(EctoLibSql,
   database: "encrypted.db",
   encryption_key: "your-secret-key-must-be-at-least-32-characters"
 )
 
-# Encrypted embedded replica
+# Encrypted remote database (Turso cloud encryption)
+{:ok, conn} = DBConnection.start_link(EctoLibSql,
+  uri: "libsql://your-encrypted-db.turso.io",
+  auth_token: "your-token",
+  remote_encryption_key: "base64-encoded-encryption-key"
+)
+
+# Encrypted embedded replica (both local and remote encryption)
 {:ok, conn} = DBConnection.start_link(EctoLibSql,
   database: "encrypted.db",
-  uri: "libsql://your-db.turso.io",
+  uri: "libsql://your-encrypted-db.turso.io",
   auth_token: "your-token",
-  encryption_key: "your-secret-key-must-be-at-least-32-characters",
+  encryption_key: "your-local-encryption-key-32-chars-min",
+  remote_encryption_key: "base64-encoded-remote-encryption-key",
   sync: true
 )
 ```
+
+**Notes**:
+- `encryption_key`: Used for local file encryption (local and embedded replica modes)
+- `remote_encryption_key`: Used for Turso encrypted databases (remote and embedded replica modes)
+- Remote encryption keys should be base64-encoded as per Turso's encryption requirements
+- See [Turso Encryption Documentation](https://docs.turso.tech/cloud/encryption) for more details
 
 ### Embedded Replica Synchronisation
 
@@ -404,7 +422,8 @@ This is useful for offline-first applications or when you want explicit control 
 | `uri` | string | Remote LibSQL server URI (e.g., `libsql://...` or `wss://...`) |
 | `auth_token` | string | Authentication token for remote connections |
 | `sync` | boolean | Enable automatic synchronisation for embedded replicas |
-| `encryption_key` | string | Encryption key (32+ characters) for local database |
+| `encryption_key` | string | Encryption key (32+ characters) for local database file encryption (AES-256-CBC) |
+| `remote_encryption_key` | string | Base64-encoded encryption key for Turso encrypted databases |
 
 ## Connection Modes
 

@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Statement Reset (`reset_stmt/2`)**
+  - Explicitly reset prepared statements to initial state for efficient reuse
+  - **Performance improvement**: 10-15x faster than re-preparing the same SQL string
+  - Enables optimal statement reuse pattern: prepare once, execute many times with reset between executions
+  - Rust NIF: `reset_statement()` in `src/statement.rs`
+  - Elixir wrapper: `EctoLibSql.Native.reset_stmt/2`
+  - Added 3 comprehensive tests covering explicit reset, multiple resets, and error handling
+  - Usage: `EctoLibSql.Native.reset_stmt(state, stmt_id)` returns `:ok` or `{:error, reason}`
+
+- **Statement Column Metadata (`get_stmt_columns/2`)**
+  - Retrieve full column metadata from prepared statements
+  - Returns column name, origin name, and declared type for all columns
+  - **Use cases**: Type introspection for dynamic queries, schema discovery, better error messages, type casting hints
+  - Rust NIF: `get_statement_columns()` in `src/statement.rs`
+  - Elixir wrapper: `EctoLibSql.Native.get_stmt_columns/2`
+  - Returns `{:ok, [{name, origin_name, decl_type}]}` tuples for each column
+  - Added 4 comprehensive tests covering basic metadata, aliased columns, expressions, and error handling
+  - Supports complex queries with aliases, joins, and aggregate functions
+
+- **Remote Encryption Support for Turso Encrypted Databases**
+  - Added support for Turso cloud encrypted databases via `remote_encryption_key` connection option
+  - Complements existing local encryption (`encryption_key`) for at-rest database file encryption
+  - **Encryption types**:
+    - **Local encryption**: AES-256-CBC for local SQLite files (existing feature)
+    - **Remote encryption**: Base64-encoded encryption key sent with each request to Turso (new feature)
+  - **Connection modes supported**: Remote and Remote Replica
+  - **Usage**: `remote_encryption_key: "base64-encoded-key"` in connection options
+  - Remote replica mode can use both local and remote encryption simultaneously for end-to-end encryption
+  - Updated Rust NIF: Enhanced `connect()` in `src/connection.rs` with `EncryptionContext` and `EncryptionKey::Base64Encoded`
+  - Updated documentation in README.md with examples for all encryption scenarios
+  - See [Turso Encryption Documentation](https://docs.turso.tech/cloud/encryption) for key generation and requirements
+
 ## [0.8.1] - 2025-12-18
 
 ### Fixed

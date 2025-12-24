@@ -7,7 +7,7 @@ use crate::decode;
 use crate::models::{LibSQLConn, Mode};
 use crate::utils::safe_lock_arc;
 use bytes::Bytes;
-use libsql::{Builder, Cipher, EncryptionConfig};
+use libsql::{Builder, Cipher, EncryptionConfig, EncryptionContext, EncryptionKey};
 use rustler::{Atom, NifResult, Term};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -25,7 +25,13 @@ use uuid::Uuid;
 /// - `database` - Path to local database file (required for local/remote_replica modes)
 /// - `uri` - Remote database URI (required for remote/remote_replica modes)
 /// - `auth_token` - Authentication token (required for remote/remote_replica modes)
-/// - `encryption_key` - Optional encryption key (min 32 chars) for encryption at rest
+/// - `encryption_key` - Optional local encryption key for local database encryption at rest (local/remote_replica modes)
+/// - `remote_encryption_key` - Optional remote encryption key for Turso encrypted databases (remote/remote_replica modes)
+///
+/// **Encryption Support**:
+/// - **Local encryption**: Uses AES-256-CBC for local database files (via `encryption_key`)
+/// - **Remote encryption**: Sends encryption key with each request to Turso (via `remote_encryption_key`)
+/// - **Remote replica**: Supports both local and remote encryption simultaneously
 ///
 /// Returns the connection ID as a string on success, or an error on failure.
 ///
@@ -53,6 +59,9 @@ pub fn connect(opts: Term, mode: Term) -> NifResult<String> {
     let encryption_key = map
         .get("encryption_key")
         .and_then(|t| t.decode::<String>().ok());
+    let remote_encryption_key = map
+        .get("remote_encryption_key")
+        .and_then(|t| t.decode::<String>().ok());
 
     // Wrap the entire connection process with a timeout using the global runtime.
     TOKIO_RUNTIME.block_on(async {
@@ -74,6 +83,7 @@ pub fn connect(opts: Term, mode: Term) -> NifResult<String> {
 
                     let mut builder = Builder::new_remote_replica(dbname, url, token);
 
+                    // Local encryption for the replica file (at-rest encryption)
                     if let Some(key) = encryption_key {
                         let config = EncryptionConfig {
                             cipher: Cipher::Aes256Cbc,
@@ -82,13 +92,31 @@ pub fn connect(opts: Term, mode: Term) -> NifResult<String> {
                         builder = builder.encryption_config(config);
                     }
 
+                    // Remote encryption for Turso encrypted databases (sent with each request)
+                    if let Some(key) = remote_encryption_key {
+                        let encryption_context = EncryptionContext {
+                            key: EncryptionKey::Base64Encoded(key),
+                        };
+                        builder = builder.remote_encryption(encryption_context);
+                    }
+
                     builder.build().await
                 }
                 Mode::Remote => {
                     let url = url.ok_or_else(|| rustler::Error::BadArg)?;
                     let token = token.ok_or_else(|| rustler::Error::BadArg)?;
 
-                    Builder::new_remote(url, token).build().await
+                    let mut builder = Builder::new_remote(url, token);
+
+                    // Remote encryption for Turso encrypted databases
+                    if let Some(key) = remote_encryption_key {
+                        let encryption_context = EncryptionContext {
+                            key: EncryptionKey::Base64Encoded(key),
+                        };
+                        builder = builder.remote_encryption(encryption_context);
+                    }
+
+                    builder.build().await
                 }
                 Mode::Local => {
                     let dbname = dbname.ok_or_else(|| rustler::Error::BadArg)?;

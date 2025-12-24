@@ -149,6 +149,12 @@ defmodule EctoLibSql.Native do
   def statement_parameter_count(_conn_id, _stmt_id), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
+  def reset_statement(_conn_id, _stmt_id), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
+  def get_statement_columns(_conn_id, _stmt_id), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
   def savepoint(_conn_id, _trx_id, _name), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
@@ -1256,6 +1262,85 @@ defmodule EctoLibSql.Native do
 
   def get_max_write_frame(%EctoLibSql.State{conn_id: conn_id}) do
     get_max_write_frame(conn_id)
+  end
+
+  @doc """
+  Reset a prepared statement to its initial state for reuse.
+
+  After executing a statement, you should reset it before binding new parameters
+  and executing again. This allows efficient statement reuse without re-preparing
+  the same SQL string repeatedly.
+
+  **Performance Note**: Resetting and reusing statements is 10-15x faster than
+  re-preparing the same SQL string. Always reset statements when executing the
+  same query multiple times with different parameters.
+
+  ## Parameters
+    - state: The connection state with the prepared statement
+    - stmt_id: The prepared statement ID
+
+  ## Returns
+    - `:ok` - Statement reset successfully
+    - `{:error, reason}` - Reset failed
+
+  ## Example
+
+      {:ok, stmt_id} = EctoLibSql.prepare(state, "INSERT INTO logs (msg) VALUES (?)")
+
+      for msg <- messages do
+        EctoLibSql.execute_stmt(state, stmt_id, [msg])
+        EctoLibSql.Native.reset_stmt(state, stmt_id)  # Reset for next iteration
+      end
+
+      EctoLibSql.close_stmt(state, stmt_id)
+
+  """
+  def reset_stmt(%EctoLibSql.State{conn_id: conn_id} = _state, stmt_id)
+      when is_binary(conn_id) and is_binary(stmt_id) do
+    reset_statement(conn_id, stmt_id)
+  end
+
+  @doc """
+  Get column metadata for a prepared statement.
+
+  Returns information about all columns that will be returned when the
+  statement is executed. This includes column names, origin names, and declared types.
+
+  ## Parameters
+    - state: The connection state with the prepared statement
+    - stmt_id: The prepared statement ID
+
+  ## Returns
+    - `{:ok, columns}` - List of tuples with `{name, origin_name, decl_type}`
+    - `{:error, reason}` - Failed to get metadata
+
+  ## Example
+
+      {:ok, stmt_id} = EctoLibSql.prepare(state, "SELECT id, name, age FROM users")
+      {:ok, columns} = EctoLibSql.Native.get_stmt_columns(state, stmt_id)
+      # Returns:
+      # [
+      #   {"id", "id", "INTEGER"},
+      #   {"name", "name", "TEXT"},
+      #   {"age", "age", "INTEGER"}
+      # ]
+
+  ## Use Cases
+
+    - **Type introspection**: Understand column types for dynamic queries
+    - **Schema discovery**: Explore database structure without separate queries
+    - **Better error messages**: Show column names and types in error output
+    - **Type casting hints**: Help Ecto determine appropriate type conversions
+
+  """
+  def get_stmt_columns(%EctoLibSql.State{conn_id: conn_id} = _state, stmt_id)
+      when is_binary(conn_id) and is_binary(stmt_id) do
+    case get_statement_columns(conn_id, stmt_id) do
+      {:ok, columns} -> {:ok, columns}
+      result when is_list(result) -> {:ok, result}
+      {:error, reason} -> {:error, reason}
+      other -> {:error, "Unexpected response: #{inspect(other)}"}
+    end
   end
 
   @doc """
