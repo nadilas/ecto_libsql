@@ -359,13 +359,12 @@ defmodule EctoLibSql.PreparedStatementTest do
 
       # Setup: Create 100 test users
       Enum.each(1..100, fn i ->
-        {:ok, _, _, _state} =
-          EctoLibSql.handle_execute(
-            "INSERT INTO users (id, name, email) VALUES (?, ?, ?)",
-            [i, "User#{i}", "user#{i}@example.com"],
-            [],
-            state
-          )
+        {:ok, _query, _result, _} =
+          exec_sql(state, "INSERT INTO users (id, name, email) VALUES (?, ?, ?)", [
+            i,
+            "User#{i}",
+            "user#{i}@example.com"
+          ])
       end)
 
       # Benchmark 1: Unprepared (re-compile SQL each time)
@@ -438,13 +437,12 @@ defmodule EctoLibSql.PreparedStatementTest do
 
       # Insert 1000 test rows
       Enum.each(1..1000, fn i ->
-        {:ok, _, _, _state} =
-          EctoLibSql.handle_execute(
-            "INSERT INTO users (id, name, email) VALUES (?, ?, ?)",
-            [i, "User#{i}", "user#{i}@example.com"],
-            [],
-            state
-          )
+        {:ok, _query, _result, _} =
+          exec_sql(state, "INSERT INTO users (id, name, email) VALUES (?, ?, ?)", [
+            i,
+            "User#{i}",
+            "user#{i}@example.com"
+          ])
       end)
 
       {:ok, stmt_id} = Native.prepare(state, "SELECT * FROM users WHERE id = ?")
