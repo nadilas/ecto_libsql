@@ -7,24 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Investigated but Not Supported
-
-- **Hooks Investigation**: Researched implementation of SQLite hooks (update hooks and authorizer hooks) for CDC and row-level security
-  - **Update Hooks (CDC)**: Cannot be implemented due to Rustler threading limitations
-    - SQLite's update hook runs on managed BEAM threads
-    - Rustler's `OwnedEnv::send_and_clear()` can ONLY be called from unmanaged threads
-    - Would cause panic: "send_and_clear: current thread is managed"
-  - **Authorizer Hooks (RLS)**: Cannot be implemented due to synchronous callback requirements
-    - Requires immediate synchronous response (Allow/Deny/Ignore)
-    - No safe way to block waiting for Elixir response from scheduler thread
-    - Would risk deadlocks with scheduler thread blocking
-  - **Result**: Both `add_update_hook/2`, `remove_update_hook/1`, and `add_authorizer/2` return `{:error, :unsupported}`
-  - **Alternatives provided**: Comprehensive documentation of alternative approaches:
-    - For CDC: Application-level events, database triggers, polling, Phoenix.Tracker
-    - For RLS: Application-level auth, database views, query rewriting, connection-level privileges
-  - See Rustler issue: https://github.com/rusterlium/rustler/issues/293
-
 ### Added
+
+- **RANDOM ROWID Support (libSQL Extension)**
+  - Added support for libSQL's RANDOM ROWID table option to generate pseudorandom rowid values instead of consecutive integers
+  - **Security/Privacy Benefits**: Prevents ID enumeration attacks and leaking business metrics through sequential IDs
+  - **Usage**: Pass `options: [random_rowid: true]` to `create table()` in migrations
+  - **Example**:
+    ```elixir
+    create table(:sessions, options: [random_rowid: true]) do
+      add :token, :string
+      add :user_id, :integer
+      timestamps()
+    end
+    ```
+  - **Compatibility**: Works with all table configurations (single PK, composite PK, IF NOT EXISTS)
+  - **Restrictions**: Mutually exclusive with WITHOUT ROWID and AUTOINCREMENT (per libSQL specification)
+  - **Validation**: Early validation of mutually exclusive options with clear error messages (connection.ex:386-407)
+    - Raises `ArgumentError` if RANDOM ROWID is combined with WITHOUT ROWID
+    - Raises `ArgumentError` if RANDOM ROWID is combined with AUTOINCREMENT on any column
+    - Prevents libSQL runtime errors by catching conflicts during migration compilation
+  - SQL output: `CREATE TABLE sessions (...) RANDOM ROWID`
+  - Added 7 comprehensive tests covering RANDOM ROWID with various configurations and validation scenarios
+  - Documentation: See [libSQL extensions guide](https://github.com/tursodatabase/libsql/blob/main/libsql-sqlite3/doc/libsql_extensions.md#random-rowid)
 
 - **SQLite Extension Loading Support (`enable_extensions/2`, `load_ext/3`)**
   - Load SQLite extensions dynamically from shared library files
@@ -90,6 +95,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated Rust NIF: Enhanced `connect()` in `src/connection.rs` with `EncryptionContext` and `EncryptionKey::Base64Encoded`
   - Updated documentation in README.md with examples for all encryption scenarios
   - See [Turso Encryption Documentation](https://docs.turso.tech/cloud/encryption) for key generation and requirements
+
+### Clarifications
+
+- **ALTER TABLE ALTER COLUMN Support (Already Implemented)**
+  - **Fully supported** since v0.6.0 - libSQL's ALTER COLUMN extension for modifying column attributes
+  - **Capabilities**: Modify type affinity, NOT NULL, CHECK, DEFAULT, and REFERENCES constraints
+  - **Usage**: Use `:modify` in migrations as with other Ecto adapters
+  - **Example**:
+    ```elixir
+    alter table(:users) do
+      modify :age, :string, default: "0"  # Change type and default
+      modify :email, :string, null: false # Add NOT NULL constraint
+    end
+    ```
+  - **Important**: Changes only apply to new/updated rows; existing data is not revalidated
+  - **Implementation**: `lib/ecto/adapters/libsql/connection.ex:213-219` handles `:modify` changes
+  - SQL output: `ALTER TABLE users ALTER COLUMN age TO age TEXT DEFAULT '0'`
+  - This is a **libSQL extension** beyond standard SQLite (SQLite does not support ALTER COLUMN)
+
+### Investigated but Not Supported
+
+- **Hooks Investigation**: Researched implementation of SQLite hooks (update hooks and authorizer hooks) for CDC and row-level security
+  - **Update Hooks (CDC)**: Cannot be implemented due to Rustler threading limitations
+    - SQLite's update hook runs on managed BEAM threads
+    - Rustler's `OwnedEnv::send_and_clear()` can ONLY be called from unmanaged threads
+    - Would cause panic: "send_and_clear: current thread is managed"
+  - **Authorizer Hooks (RLS)**: Cannot be implemented due to synchronous callback requirements
+    - Requires immediate synchronous response (Allow/Deny/Ignore)
+    - No safe way to block waiting for Elixir response from scheduler thread
+    - Would risk deadlocks with scheduler thread blocking
+  - **Result**: Both `add_update_hook/2`, `remove_update_hook/1`, and `add_authorizer/2` return `{:error, :unsupported}`
+  - **Alternatives provided**: Comprehensive documentation of alternative approaches:
+    - For CDC: Application-level events, database triggers, polling, Phoenix.Tracker
+    - For RLS: Application-level auth, database views, query rewriting, connection-level privileges
+  - See Rustler issue: https://github.com/rusterlium/rustler/issues/293
 
 ## [0.8.1] - 2025-12-18
 

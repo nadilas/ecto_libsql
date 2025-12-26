@@ -184,10 +184,10 @@ defmodule Ecto.Adapters.LibSql.Connection do
     column_definitions =
       Enum.map_join(columns, ", ", &column_definition(&1, composite_pk))
 
-    table_options = table_options(table, columns)
+    {table_constraints, table_suffix} = table_options(table, columns)
 
     [
-      "CREATE TABLE#{if_not_exists} #{table_name} (#{column_definitions}#{table_options})"
+      "CREATE TABLE#{if_not_exists} #{table_name} (#{column_definitions}#{table_constraints})#{table_suffix}"
     ]
   end
 
@@ -384,23 +384,51 @@ defmodule Ecto.Adapters.LibSql.Connection do
   defp column_default({:fragment, expr}), do: " DEFAULT #{expr}"
 
   defp table_options(table, columns) do
+    # Validate mutually exclusive options (per libSQL specification)
+    if table.options && Keyword.get(table.options, :random_rowid, false) do
+      # RANDOM ROWID is mutually exclusive with WITHOUT ROWID
+      if Keyword.get(table.options, :without_rowid, false) do
+        raise ArgumentError,
+              "RANDOM ROWID and WITHOUT ROWID are mutually exclusive options (per libSQL specification)"
+      end
+
+      # RANDOM ROWID is mutually exclusive with AUTOINCREMENT on any column
+      autoincrement_column =
+        Enum.find(columns, fn {:add, _name, _type, opts} ->
+          Keyword.get(opts, :autoincrement, false)
+        end)
+
+      if autoincrement_column do
+        {:add, col_name, _type, _opts} = autoincrement_column
+
+        raise ArgumentError,
+              "RANDOM ROWID and AUTOINCREMENT (on column #{inspect(col_name)}) are mutually exclusive options (per libSQL specification)"
+      end
+    end
+
     pk =
       Enum.filter(columns, fn {:add, _name, _type, opts} ->
         Keyword.get(opts, :primary_key, false)
       end)
 
-    cond do
-      length(pk) > 1 ->
+    # Composite primary key constraint (goes inside CREATE TABLE parentheses)
+    table_constraints =
+      if length(pk) > 1 do
         pk_names = Enum.map_join(pk, ", ", fn {:add, name, _type, _opts} -> quote_name(name) end)
         ", PRIMARY KEY (#{pk_names})"
-
-      table.options ->
-        # Handle custom table options
+      else
         ""
+      end
 
-      true ->
+    # Table suffix options (go after closing parenthesis)
+    table_suffix =
+      if table.options && Keyword.get(table.options, :random_rowid, false) do
+        " RANDOM ROWID"
+      else
         ""
-    end
+      end
+
+    {table_constraints, table_suffix}
   end
 
   ## Query Helpers
