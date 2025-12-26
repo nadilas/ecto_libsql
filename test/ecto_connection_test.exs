@@ -119,6 +119,40 @@ defmodule Ecto.Adapters.LibSql.ConnectionTest do
       assert sql =~ ~s[RANDOM ROWID]
     end
 
+    test "raises error when RANDOM ROWID is combined with WITHOUT ROWID" do
+      table = %Table{
+        name: :users,
+        prefix: nil,
+        options: [random_rowid: true, without_rowid: true]
+      }
+
+      columns = [
+        {:add, :id, :id, [primary_key: true]},
+        {:add, :name, :string, []}
+      ]
+
+      assert_raise ArgumentError,
+                   "RANDOM ROWID and WITHOUT ROWID are mutually exclusive options (per libSQL specification)",
+                   fn ->
+                     Connection.execute_ddl({:create, table, columns})
+                   end
+    end
+
+    test "raises error when RANDOM ROWID is combined with AUTOINCREMENT" do
+      table = %Table{name: :users, prefix: nil, options: [random_rowid: true]}
+
+      columns = [
+        {:add, :id, :id, [primary_key: true, autoincrement: true]},
+        {:add, :name, :string, []}
+      ]
+
+      assert_raise ArgumentError,
+                   "RANDOM ROWID and AUTOINCREMENT (on column :id) are mutually exclusive options (per libSQL specification)",
+                   fn ->
+                     Connection.execute_ddl({:create, table, columns})
+                   end
+    end
+
     test "creates table with NOT NULL constraint" do
       table = %Table{name: :users, prefix: nil}
 

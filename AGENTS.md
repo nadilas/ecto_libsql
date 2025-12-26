@@ -1865,11 +1865,12 @@ defmodule MyApp.Repo.Migrations.ChangeUserAge do
     create table(:users_new) do
       add :id, :integer, primary_key: true
       add :name, :string
+      add :email, :string
       add :age, :string  # Changed from :integer
       timestamps()
     end
 
-    execute "INSERT INTO users_new (id, name, age, inserted_at, updated_at) SELECT id, name, CAST(age AS TEXT), inserted_at, updated_at FROM users"
+    execute "INSERT INTO users_new (id, name, email, age, inserted_at, updated_at) SELECT id, name, email, CAST(age AS TEXT), inserted_at, updated_at FROM users"
     drop table(:users)
     rename table(:users_new), to: table(:users)
 
