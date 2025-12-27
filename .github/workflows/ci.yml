@@ -55,6 +55,13 @@ jobs:
       - name: Run Rust tests
         run: cargo test --manifest-path native/ecto_libsql/Cargo.toml --all-features
 
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: Check licenses and security advisories
+        working-directory: native/ecto_libsql
+        run: cargo deny check licenses
+
   rust-fuzz:
     name: Rust Fuzz Testing
     runs-on: ubuntu-latest
