@@ -96,14 +96,10 @@ jobs:
       - name: Run fuzz tests (30 seconds each)
         working-directory: native/ecto_libsql
         run: |
-          echo "Running fuzz_should_use_query..."
-          cargo +nightly fuzz run fuzz_should_use_query -- -max_total_time=30
-
-          echo "Running fuzz_detect_query_type..."
-          cargo +nightly fuzz run fuzz_detect_query_type -- -max_total_time=30
-
-          echo "Running fuzz_sql_structured..."
-          cargo +nightly fuzz run fuzz_sql_structured -- -max_total_time=30
+          for target in $(cargo +nightly fuzz list); do
+            echo "Running $target..."
+            cargo +nightly fuzz run "$target" -- -max_total_time=30
+          done
 
           echo "All fuzz tests passed!"
 

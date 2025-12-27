@@ -4,6 +4,9 @@
 //! They verify that the actual database operations work correctly with parameter
 //! binding, transactions, and various data types.
 
+// Allow unwrap() in tests for cleaner test code - see CLAUDE.md "Test Code Exception"
+#![allow(clippy::unwrap_used)]
+
 use libsql::{Builder, Value};
 use std::fs;
 use uuid::Uuid;

@@ -4,6 +4,9 @@
 //! - `detect_query_type()` - Categorizes SQL statements by type
 //! - `should_use_query()` - Determines whether to use query() vs execute()
 
+// Allow unwrap() in tests for cleaner test code - see CLAUDE.md "Test Code Exception"
+#![allow(clippy::unwrap_used)]
+
 use crate::utils::{detect_query_type, should_use_query, QueryType};
 
 /// Tests for query type detection
