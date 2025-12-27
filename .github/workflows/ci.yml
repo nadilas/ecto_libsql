@@ -58,7 +58,7 @@ jobs:
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
 
-      - name: Check licenses and security advisories
+      - name: Check licences and security advisories
         working-directory: native/ecto_libsql
         run: cargo deny check licenses
 
