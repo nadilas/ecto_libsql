@@ -8,7 +8,7 @@ defmodule EctoLibSql.Result do
 
   ## Fields
 
-  - `:command` - The type of SQL command (`:select`, `:insert`, `:update`, `:delete`, or `:other`)
+  - `:command` - The type of SQL command (`:select`, `:insert`, `:update`, `:delete`, `:create`, `:begin`, `:commit`, `:rollback`, `:pragma`, `:batch`, `:unknown`, `:other`, or `nil`)
   - `:columns` - List of column names (for SELECT queries), or `nil`
   - `:rows` - List of rows, where each row is a list of values, or `nil`
   - `:num_rows` - Number of rows affected or returned

@@ -101,7 +101,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added **Dialyxir** for type checking with proper ignore patterns (`.dialyzer_ignore.exs`)
   - Added **Sobelow** security scanner for vulnerability detection
   - All three tools integrated into GitHub CI pipeline for automated quality checks
-  - CI now runs: `mix credo --strict`, `mix sobelow --config` on every PR
 
 - **Property-Based Fuzz Testing (Elixir)**
   - New `test/fuzz_test.exs` with comprehensive property-based tests using StreamData

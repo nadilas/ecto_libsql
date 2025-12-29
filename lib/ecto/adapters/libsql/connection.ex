@@ -355,7 +355,7 @@ defmodule Ecto.Adapters.LibSql.Connection do
           "SQLite does not support array types. Use JSON or separate tables instead."
   end
 
-  defp column_type(type, _opts) when is_atom(type), do: Atom.to_string(type) |> String.upcase()
+  defp column_type(type, _opts) when is_atom(type), do: String.upcase(Atom.to_string(type))
   defp column_type(type, _opts), do: type
 
   defp size_constraint(opts) do
@@ -665,7 +665,7 @@ defmodule Ecto.Adapters.LibSql.Connection do
   ## Helpers for query generation
 
   defp create_names(%{sources: sources}) do
-    create_names(sources, 0, tuple_size(sources)) |> List.to_tuple()
+    List.to_tuple(create_names(sources, 0, tuple_size(sources)))
   end
 
   defp create_names(sources, pos, limit) when pos < limit do
@@ -828,8 +828,7 @@ defmodule Ecto.Adapters.LibSql.Connection do
   defp boolean(_name, [], _sources, _query), do: []
 
   defp boolean(name, [%{expr: expr, op: op} | query_exprs], sources, query) do
-    [
-      name,
+    reduced =
       Enum.reduce(query_exprs, {op, paren_expr(expr, sources, query)}, fn
         %{expr: expr, op: op}, {op, acc} ->
           {op, [acc, operator_to_boolean(op), paren_expr(expr, sources, query)]}
@@ -837,8 +836,8 @@ defmodule Ecto.Adapters.LibSql.Connection do
         %{expr: expr, op: op}, {_, acc} ->
           {op, [?(, acc, ?), operator_to_boolean(op), paren_expr(expr, sources, query)]}
       end)
-      |> elem(1)
-    ]
+
+    [name, elem(reduced, 1)]
   end
 
   defp operator_to_boolean(:and), do: " AND "

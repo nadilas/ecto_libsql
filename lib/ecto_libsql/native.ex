@@ -494,11 +494,13 @@ defmodule EctoLibSql.Native do
 
   defp extract_first_word(query) do
     # Extract first word more efficiently - stop at first whitespace
-    case :binary.match(query, [" ", "\t", "\n", "\r", "("]) do
-      {pos, _len} -> binary_part(query, 0, pos)
-      :nomatch -> query
-    end
-    |> String.downcase()
+    first_word =
+      case :binary.match(query, [" ", "\t", "\n", "\r", "("]) do
+        {pos, _len} -> binary_part(query, 0, pos)
+        :nomatch -> query
+      end
+
+    String.downcase(first_word)
   end
 
   defp command_atom("select"), do: :select
