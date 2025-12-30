@@ -687,7 +687,137 @@ defmodule EctoLibSql.StatementFeaturesTest do
 
       EctoLibSql.Native.close_stmt(stmt_id)
     end
-  end
+
+    test "column metadata for all data types (INTEGER, TEXT, BLOB, REAL)", %{state: state} do
+      # Create table with all major data types
+      {:ok, _query, _result, state} =
+        EctoLibSql.handle_execute(
+          """
+          CREATE TABLE data_types (
+            id INTEGER PRIMARY KEY,
+            text_col TEXT,
+            blob_col BLOB,
+            real_col REAL,
+            numeric_col NUMERIC
+          )
+          """,
+          [],
+          [],
+          state
+        )
+
+      {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "SELECT * FROM data_types")
+
+      assert {:ok, 5} = EctoLibSql.Native.stmt_column_count(state, stmt_id)
+
+      # Get full metadata including types
+      {:ok, columns} = EctoLibSql.Native.get_stmt_columns(state, stmt_id)
+
+      assert length(columns) == 5
+
+      # Verify column types
+      [
+        {id_name, _, id_type},
+        {text_name, _, text_type},
+        {blob_name, _, blob_type},
+        {real_name, _, real_type},
+        {numeric_name, _, numeric_type}
+      ] = columns
+
+      assert id_name == "id"
+      assert id_type == "INTEGER"
+
+      assert text_name == "text_col"
+      assert text_type == "TEXT"
+
+      assert blob_name == "blob_col"
+      assert blob_type == "BLOB"
+
+      assert real_name == "real_col"
+      assert real_type == "REAL"
+
+      assert numeric_name == "numeric_col"
+      assert numeric_type == "NUMERIC"
+
+      EctoLibSql.Native.close_stmt(stmt_id)
+    end
+
+    test "column names for SELECT with implicit type conversion", %{state: state} do
+      # Test column introspection with type casting
+      {:ok, stmt_id} =
+        EctoLibSql.Native.prepare(
+          state,
+          """
+          SELECT
+            CAST(id AS TEXT) as id_text,
+            CAST(name AS BLOB) as name_blob,
+            CAST(age AS REAL) as age_real
+          FROM users
+          """
+        )
+
+      assert {:ok, 3} = EctoLibSql.Native.stmt_column_count(state, stmt_id)
+
+      names = get_column_names(state, stmt_id, 3)
+      assert names == ["id_text", "name_blob", "age_real"]
+
+      EctoLibSql.Native.close_stmt(stmt_id)
+    end
+
+    test "column count for UNION queries", %{state: state} do
+      # Create another table for UNION test
+      {:ok, _query, _result, state} =
+        EctoLibSql.handle_execute(
+          """
+          CREATE TABLE users_backup (id INTEGER PRIMARY KEY, name TEXT, age INTEGER)
+          """,
+          [],
+          [],
+          state
+        )
+
+      {:ok, stmt_id} =
+        EctoLibSql.Native.prepare(
+          state,
+          """
+          SELECT id, name, age FROM users
+          UNION
+          SELECT id, name, age FROM users_backup
+          """
+        )
+
+      assert {:ok, 3} = EctoLibSql.Native.stmt_column_count(state, stmt_id)
+
+      names = get_column_names(state, stmt_id, 3)
+      assert names == ["id", "name", "age"]
+
+      EctoLibSql.Native.close_stmt(stmt_id)
+    end
+
+    test "column count for CASE expressions", %{state: state} do
+      {:ok, stmt_id} =
+        EctoLibSql.Native.prepare(
+          state,
+          """
+          SELECT
+            id,
+            CASE
+              WHEN age < 18 THEN 'minor'
+              WHEN age >= 65 THEN 'senior'
+              ELSE 'adult'
+            END as age_group
+          FROM users
+          """
+        )
+
+      assert {:ok, 2} = EctoLibSql.Native.stmt_column_count(state, stmt_id)
+
+      names = get_column_names(state, stmt_id, 2)
+       assert names == ["id", "age_group"]
+
+       EctoLibSql.Native.close_stmt(stmt_id)
+     end
+   end
 
   # ============================================================================
   # Helper Functions
