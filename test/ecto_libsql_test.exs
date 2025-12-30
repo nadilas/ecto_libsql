@@ -495,6 +495,8 @@ defmodule EctoLibSqlTest do
 
       # Clean up
       File.rm("z_ecto_libsql_test-encrypted.db")
+      File.rm("z_ecto_libsql_test-encrypted.db-shm")
+      File.rm("z_ecto_libsql_test-encrypted.db-wal")
     end
 
     test "cannot open encrypted database without key" do
@@ -538,6 +540,8 @@ defmodule EctoLibSqlTest do
 
       # Clean up
       File.rm("z_ecto_libsql_test-encrypted2.db")
+      File.rm("z_ecto_libsql_test-encrypted2.db-shm")
+      File.rm("z_ecto_libsql_test-encrypted2.db-wal")
     end
 
     test "cannot open encrypted database with wrong key" do
@@ -602,6 +606,8 @@ defmodule EctoLibSqlTest do
 
       # Clean up
       File.rm("z_ecto_libsql_test-encrypted3.db")
+      File.rm("z_ecto_libsql_test-encrypted3.db-shm")
+      File.rm("z_ecto_libsql_test-encrypted3.db-wal")
     end
 
     test "encrypted database file does not contain plaintext" do
@@ -668,6 +674,8 @@ defmodule EctoLibSqlTest do
 
       # Clean up
       File.rm("z_ecto_libsql_test-encrypted4.db")
+      File.rm("z_ecto_libsql_test-encrypted4.db-shm")
+      File.rm("z_ecto_libsql_test-encrypted4.db-wal")
     end
   end
 end
