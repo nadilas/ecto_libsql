@@ -43,7 +43,8 @@
       "Bash(mix sobelow:*)",
       "Bash(git stash:*)",
       "Bash(git --no-pager log:*)",
-      "Bash(bd:*)"
+      "Bash(bd:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

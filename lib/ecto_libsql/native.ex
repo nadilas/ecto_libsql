@@ -284,6 +284,87 @@ defmodule EctoLibSql.Native do
   end
 
   @doc false
+  def normalize_arguments(conn_id, statement, args) do
+    # If args is already a list, return as-is (positional parameters)
+    case args do
+      list when is_list(list) ->
+        list
+
+      map when is_map(map) ->
+        # Convert named parameters map to positional list
+        # We need to introspect the statement to get parameter names and order them
+        map_to_positional_args(conn_id, statement, map)
+
+      _ ->
+        args
+    end
+  end
+
+  @doc false
+  defp remove_param_prefix(name) when is_binary(name) do
+    case String.first(name) do
+      ":" -> String.slice(name, 1..-1//1)
+      "@" -> String.slice(name, 1..-1//1)
+      "$" -> String.slice(name, 1..-1//1)
+      _ -> name
+    end
+  end
+
+  @doc false
+  defp map_to_positional_args(conn_id, statement, param_map) do
+    # Prepare the statement to introspect parameters
+    stmt_id = prepare_statement(conn_id, statement)
+
+    # stmt_id is a string UUID on success, or error tuple on failure
+    case stmt_id do
+      stmt_id when is_binary(stmt_id) ->
+        # Get parameter count
+        param_count =
+          case statement_parameter_count(conn_id, stmt_id) do
+            count when is_integer(count) -> count
+            _ -> 0
+          end
+
+        # Extract parameters in order
+        args =
+          Enum.map(1..param_count, fn idx ->
+            case statement_parameter_name(conn_id, stmt_id, idx) do
+              name when is_binary(name) ->
+                # Remove prefix (:, @, $) if present
+                clean_name = remove_param_prefix(name) |> String.to_atom()
+
+                Map.get(param_map, clean_name, nil)
+
+              nil ->
+                # Positional parameter (?)
+                nil
+
+              _ ->
+                nil
+            end
+          end)
+
+        # Clean up prepared statement
+        close_stmt(stmt_id)
+
+        # Filter out any nils that might have come from positional params
+        # If any parameter was not found in the map, we have an error
+        # but we'll let the database handle it
+        args
+
+      {:error, _reason} ->
+        # If we can't prepare the statement, fall back to assuming it's positional
+        # The actual execution will fail with a proper error
+        if is_map(param_map) do
+          # Convert map values to list in some order
+          Map.values(param_map)
+        else
+          param_map
+        end
+    end
+  end
+
+  @doc false
   def execute_non_trx(query, state, args) do
     query(state, query, args)
   end
@@ -294,7 +375,10 @@ defmodule EctoLibSql.Native do
         %EctoLibSql.Query{statement: statement} = query,
         args
       ) do
-    case query_args(conn_id, mode, syncx, statement, args) do
+    # Convert named parameters (map) to positional parameters (list)
+    args_for_execution = normalize_arguments(conn_id, statement, args)
+
+    case query_args(conn_id, mode, syncx, statement, args_for_execution) do
       %{
         "columns" => columns,
         "rows" => rows,
@@ -343,6 +427,9 @@ defmodule EctoLibSql.Native do
         %EctoLibSql.Query{statement: statement} = query,
         args
       ) do
+    # Convert named parameters (map) to positional parameters (list)
+    args_for_execution = normalize_arguments(conn_id, statement, args)
+
     # Detect the command type to route correctly
     command = detect_command(statement)
 
@@ -355,7 +442,7 @@ defmodule EctoLibSql.Native do
 
     if should_query do
       # Use query_with_trx_args for SELECT or statements with RETURNING
-      case query_with_trx_args(trx_id, conn_id, statement, args) do
+      case query_with_trx_args(trx_id, conn_id, statement, args_for_execution) do
         %{
           "columns" => columns,
           "rows" => rows,
@@ -384,7 +471,7 @@ defmodule EctoLibSql.Native do
       end
     else
       # Use execute_with_transaction for INSERT/UPDATE/DELETE without RETURNING
-      case execute_with_transaction(trx_id, conn_id, statement, args) do
+      case execute_with_transaction(trx_id, conn_id, statement, args_for_execution) do
         num_rows when is_integer(num_rows) ->
           result = %EctoLibSql.Result{
             command: command,

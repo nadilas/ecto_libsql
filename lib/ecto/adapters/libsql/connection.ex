@@ -381,7 +381,18 @@ defmodule Ecto.Adapters.LibSql.Connection do
         do: " PRIMARY KEY",
         else: ""
 
-    "#{pk}#{null}#{default}"
+    # Generated columns (SQLite 3.31+, libSQL 3.45.1+)
+    generated =
+      case Keyword.get(opts, :generated) do
+        nil ->
+          ""
+
+        expr when is_binary(expr) ->
+          stored = if Keyword.get(opts, :stored, false), do: " STORED", else: ""
+          " GENERATED ALWAYS AS (#{expr})#{stored}"
+      end
+
+    "#{pk}#{null}#{default}#{generated}"
   end
 
   defp column_default(nil), do: ""

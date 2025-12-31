@@ -804,4 +804,42 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
       assert sql =~ "STRICT"
     end
   end
+
+  describe "generated/computed columns" do
+    test "creates table with virtual generated column" do
+      table = %Table{name: :users, prefix: nil}
+
+      columns = [
+        {:add, :id, :id, [primary_key: true]},
+        {:add, :first_name, :string, [null: false]},
+        {:add, :last_name, :string, [null: false]},
+        {:add, :full_name, :string, [generated: "first_name || ' ' || last_name"]}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Verify GENERATED clause appears in SQL (but not STORED)
+      assert sql =~ "GENERATED ALWAYS AS"
+      assert sql =~ "first_name || ' ' || last_name"
+      assert !String.contains?(sql, "STORED")
+    end
+
+    test "creates table with stored generated column" do
+      table = %Table{name: :products, prefix: nil}
+
+      columns = [
+        {:add, :id, :id, [primary_key: true]},
+        {:add, :price, :float, [null: false]},
+        {:add, :quantity, :integer, [null: false]},
+        {:add, :total_value, :float, [generated: "price * quantity", stored: true]}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Verify GENERATED clause with STORED
+      assert sql =~ "GENERATED ALWAYS AS"
+      assert sql =~ "STORED"
+      assert sql =~ "price * quantity"
+    end
+  end
 end
