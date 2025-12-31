@@ -429,12 +429,23 @@ defmodule Ecto.Adapters.LibSql.Connection do
       end
 
     # Table suffix options (go after closing parenthesis)
-    table_suffix =
+    suffixes = []
+
+    suffixes =
       if table.options && Keyword.get(table.options, :random_rowid, false) do
-        " RANDOM ROWID"
+        suffixes ++ [" RANDOM ROWID"]
       else
-        ""
+        suffixes
       end
+
+    suffixes =
+      if table.options && Keyword.get(table.options, :strict, false) do
+        suffixes ++ [" STRICT"]
+      else
+        suffixes
+      end
+
+    table_suffix = Enum.join(suffixes)
 
     {table_constraints, table_suffix}
   end

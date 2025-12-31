@@ -758,4 +758,50 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
       assert schema =~ ~s[REFERENCES "tags"]
     end
   end
+
+  describe "table options - libSQL extensions" do
+    test "creates table with RANDOM ROWID option" do
+      table = %Table{name: :sessions, prefix: nil, options: [random_rowid: true]}
+
+      columns = [
+        {:add, :token, :string, [null: false]},
+        {:add, :user_id, :id, []},
+        {:add, :created_at, :utc_datetime, []}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Verify RANDOM ROWID appears in the SQL
+      assert sql =~ "RANDOM ROWID"
+
+      # Execute the migration
+      Ecto.Adapters.SQL.query!(TestRepo, sql)
+
+      # Verify table was created correctly
+      {:ok, %{rows: [[schema]]}} =
+        Ecto.Adapters.SQL.query(
+          TestRepo,
+          "SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'"
+        )
+
+      assert schema =~ "RANDOM ROWID"
+    end
+
+    test "SQL generation includes STRICT when option is set" do
+      table = %Table{name: :products, prefix: nil, options: [strict: true]}
+
+      columns = [
+        {:add, :id, :id, [primary_key: true]},
+        {:add, :name, :string, [null: false]},
+        {:add, :price, :float, []},
+        {:add, :stock, :integer, []}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Verify STRICT appears in the generated SQL
+      # Note: Execution may fail on older libSQL versions that don't support STRICT
+      assert sql =~ "STRICT"
+    end
+  end
 end
