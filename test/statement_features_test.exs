@@ -813,11 +813,11 @@ defmodule EctoLibSql.StatementFeaturesTest do
       assert {:ok, 2} = EctoLibSql.Native.stmt_column_count(state, stmt_id)
 
       names = get_column_names(state, stmt_id, 2)
-       assert names == ["id", "age_group"]
+      assert names == ["id", "age_group"]
 
-       EctoLibSql.Native.close_stmt(stmt_id)
-     end
-   end
+      EctoLibSql.Native.close_stmt(stmt_id)
+    end
+  end
 
   # ============================================================================
   # Helper Functions

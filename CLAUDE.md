@@ -203,11 +203,52 @@ cd native/ecto_libsql && cargo test
 
 ### Development Cycle
 
-1. Make changes to Elixir or Rust code
-2. Format: `mix format && cargo fmt`
-3. Run tests: `mix test && cargo test`
-4. Check formatting: `mix format --check-formatted`
-5. Commit with descriptive message
+#### Branch Strategy
+
+**ALWAYS branch from `main`** for new work:
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b feature-descriptive-name   # or bugfix-descriptive-name
+```
+
+**Branch naming**:
+- Features: `feature-<descriptive-name>`
+- Bug fixes: `bugfix-<descriptive-name>`
+
+**⚠️ CRITICAL: Preserving Untracked Files**
+
+The repository often has untracked/uncommitted files (docs, notes, etc.) that must NOT be lost when switching branches. Git preserves untracked files across branch switches automatically, but:
+- **NEVER run `git clean`** without explicit user approval
+- **NEVER run `git checkout .`** or `git restore .` on the whole repo
+- **NEVER run `git reset --hard`** without explicit user approval
+- When switching branches, untracked files stay in place - this is expected
+
+#### Development Steps
+
+1. Create feature/bugfix branch from `main` (see above)
+2. Make changes to Elixir or Rust code
+3. ALWAYS format: `mix format --check-formatted && cargo fmt`
+4. Run tests: `mix test && cargo test`
+5. Fix any issues from formatting or tests
+6. **Commit ONLY files you touched** - other untracked files stay as-is
+
+#### PR Workflow
+
+All changes go through PRs to `main` (for review bot checks):
+
+```bash
+git push -u origin feature-descriptive-name
+gh pr create --base main --title "feat: description" --body "..."
+```
+
+After PR is merged, clean up:
+```bash
+git checkout main
+git pull origin main
+git branch -d feature-descriptive-name     # Delete local branch
+```
 
 ### Adding a New NIF Function
 

@@ -219,7 +219,7 @@ defmodule EctoLibSql.ConnectionFeaturesTest do
 
     test "reset allows connection reuse in pooled scenario", %{database: database} do
       # Simulate connection pool behaviour
-      connections = 
+      connections =
         Enum.map(1..3, fn _ ->
           {:ok, state} = EctoLibSql.connect(database: database)
           state
