@@ -372,6 +372,14 @@ defmodule EctoLibSql.Native do
   # ETS-based LRU cache for parameter metadata.
   # Unlike persistent_term, this cache has a maximum size and evicts old entries.
   # This prevents unbounded memory growth from dynamic SQL workloads.
+  #
+  # Memory considerations:
+  # - Maximum 1000 entries, evicts 500 oldest when full
+  # - Each entry stores: SQL statement string, list of parameter names, access timestamp
+  # - For applications with many unique dynamic queries (e.g., dynamic filters, search),
+  #   the cache may consume several MB depending on query complexity
+  # - Use clear_param_cache/0 to reclaim memory if needed
+  # - Use param_cache_size/0 to monitor cache utilisation
   @param_cache_table :ecto_libsql_param_cache
   @param_cache_max_size 1000
   @param_cache_evict_count 500
@@ -379,8 +387,17 @@ defmodule EctoLibSql.Native do
   @doc """
   Clear the parameter name cache.
 
-  This is primarily useful for testing or when you need to reclaim memory.
+  The cache stores SQL statements and their parameter name mappings to avoid
+  repeated introspection overhead. Each entry contains the full SQL string,
+  parameter names list, and access timestamp.
+
+  Use this function to:
+  - Reclaim memory in applications with many dynamic queries
+  - Reset cache state during testing
+  - Force re-introspection after schema changes
+
   The cache will be automatically rebuilt as queries are executed.
+  Use `param_cache_size/0` to monitor cache utilisation before clearing.
   """
   @spec clear_param_cache() :: :ok
   def clear_param_cache do
@@ -396,6 +413,11 @@ defmodule EctoLibSql.Native do
   Get the current size of the parameter name cache.
 
   Returns the number of cached SQL statement parameter mappings.
+  The cache has a maximum size of #{@param_cache_max_size} entries.
+
+  Useful for monitoring cache utilisation in applications with dynamic queries.
+  If the cache frequently hits the maximum, consider whether query patterns
+  could be optimised to reduce unique SQL variations.
   """
   @spec param_cache_size() :: non_neg_integer()
   def param_cache_size do
@@ -437,11 +459,9 @@ defmodule EctoLibSql.Native do
 
     case :ets.lookup(@param_cache_table, statement) do
       [{^statement, param_names, _access_time}] ->
-        # Update access time for LRU tracking (fire and forget).
-        spawn(fn ->
-          :ets.update_element(@param_cache_table, statement, {3, System.monotonic_time()})
-        end)
-
+        # Update access time synchronously for correct LRU tracking.
+        # ETS updates are fast (microseconds), so no need for async.
+        :ets.update_element(@param_cache_table, statement, {3, System.monotonic_time()})
         param_names
 
       [] ->
