@@ -312,6 +312,48 @@ defmodule EctoLibSql.Native do
   end
 
   @doc false
+  # Extract a parameter name at the given index from a prepared statement.
+  # Returns the name with prefix removed, or nil if lookup fails.
+  defp extract_param_name(conn_id, stmt_id, idx) do
+    case statement_parameter_name(conn_id, stmt_id, idx) do
+      name when is_binary(name) ->
+        # Remove prefix (:, @, $) if present. Keep as string.
+        remove_param_prefix(name)
+
+      nil ->
+        # Positional parameter (?) - use nil as marker.
+        nil
+
+      {:error, _reason} ->
+        # Parameter name lookup failed, use nil as fallback.
+        nil
+
+      _ ->
+        nil
+    end
+  end
+
+  @doc false
+  # Convert a map of named parameters to a positional list using statement introspection.
+  # Returns list on success, {:error, reason} on failure.
+  defp convert_map_to_positional(conn_id, stmt_id, map) do
+    case statement_parameter_count(conn_id, stmt_id) do
+      count when is_integer(count) and count >= 0 ->
+        param_names =
+          if count == 0,
+            do: [],
+            else: Enum.map(1..count, &extract_param_name(conn_id, stmt_id, &1))
+
+        # Convert map to positional list using the names.
+        # Support both atom and string keys in the input map.
+        Enum.map(param_names, &get_map_value_flexible(map, &1))
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc false
   # Get a value from a map, supporting both atom and string keys.
   # This avoids creating atoms at runtime while allowing users to pass
   # either %{name: value} or %{"name" => value}.
@@ -469,24 +511,7 @@ defmodule EctoLibSql.Native do
               if count == 0 do
                 []
               else
-                Enum.map(1..count, fn idx ->
-                  case statement_parameter_name(conn_id, stmt_id, idx) do
-                    name when is_binary(name) ->
-                      # Remove prefix (:, @, $) if present. Keep as string.
-                      remove_param_prefix(name)
-
-                    nil ->
-                      # Positional parameter (?) - use nil as marker.
-                      nil
-
-                    {:error, _reason} ->
-                      # Parameter name lookup failed, use nil as fallback.
-                      nil
-
-                    _ ->
-                      nil
-                  end
-                end)
+                Enum.map(1..count, &extract_param_name(conn_id, stmt_id, &1))
               end
 
             # Clean up prepared statement.
@@ -526,38 +551,7 @@ defmodule EctoLibSql.Native do
       map when is_map(map) ->
         # Convert named parameters map to positional list using stmt introspection.
         # Propagate errors instead of silently treating them as zero-parameter statements.
-        case statement_parameter_count(conn_id, stmt_id) do
-          count when is_integer(count) and count >= 0 ->
-            if count == 0 do
-              # No parameters, return empty list.
-              []
-            else
-              param_names =
-                Enum.map(1..count, fn idx ->
-                  case statement_parameter_name(conn_id, stmt_id, idx) do
-                    name when is_binary(name) ->
-                      # Keep as string to avoid creating atoms at runtime.
-                      remove_param_prefix(name)
-
-                    {:error, _reason} ->
-                      # Parameter name lookup failed, use nil as fallback.
-                      nil
-
-                    _ ->
-                      nil
-                  end
-                end)
-
-              # Convert map to positional list using the names.
-              # Support both atom and string keys in the input map.
-              Enum.map(param_names, fn name ->
-                get_map_value_flexible(map, name)
-              end)
-            end
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+        convert_map_to_positional(conn_id, stmt_id, map)
 
       _ ->
         args
