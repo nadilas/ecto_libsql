@@ -106,13 +106,17 @@ defmodule EctoLibSql.SecurityTest do
         )
 
       on_exit(fn ->
+        # Disconnect is handled per-test or state is garbage collected.
         cleanup_db(db_path)
       end)
 
       {:ok, state: state, db_path: db_path}
     end
 
-    test "connection A cannot access connection B's prepared statement", %{state: state_a} do
+    test "connection A cannot access connection B's prepared statement", %{
+      state: state_a,
+      db_path: _db_path
+    } do
       db_path_b = "test_stmt2_#{System.unique_integer()}.db"
       {:ok, state_b} = EctoLibSql.connect(database: db_path_b)
 
@@ -147,19 +151,15 @@ defmodule EctoLibSql.SecurityTest do
     test "statement cannot be used after close", %{state: state} do
       {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "SELECT * FROM test_table")
 
-      # Close the statement
+      # Close the statement.
       :ok = EctoLibSql.Native.close_stmt(stmt_id)
 
-      # Try to use closed statement - should fail
-      case EctoLibSql.Native.query_stmt(state, stmt_id, []) do
-        {:error, reason} ->
-          assert reason =~ "Statement not found"
+      # Try to use closed statement - should fail.
+      result = EctoLibSql.Native.query_stmt(state, stmt_id, [])
+      assert {:error, reason} = result
+      assert reason =~ "Statement not found"
 
-        {:ok, _} ->
-          flunk("Should not be able to use a closed statement")
-      end
-
-      EctoLibSql.disconnect([], state)
+      # Don't disconnect state - it's managed by setup/on_exit.
     end
   end
 
@@ -188,13 +188,14 @@ defmodule EctoLibSql.SecurityTest do
       end
 
       on_exit(fn ->
+        # Disconnect is handled per-test or state is garbage collected.
         cleanup_db(db_path)
       end)
 
-      {:ok, state: state}
+      {:ok, state: state, db_path: db_path}
     end
 
-    test "connection A cannot access connection B's cursor", %{state: state_a} do
+    test "connection A cannot access connection B's cursor", %{state: state_a, db_path: _db_path} do
       db_path_b = "test_cursor2_#{System.unique_integer()}.db"
       {:ok, state_b} = EctoLibSql.connect(database: db_path_b)
 
@@ -234,7 +235,7 @@ defmodule EctoLibSql.SecurityTest do
           flunk("Connection B should not access Connection A's cursor")
       end
 
-      EctoLibSql.disconnect([], state_a)
+      # Only disconnect state_b - state_a is managed by setup/on_exit.
       EctoLibSql.disconnect([], state_b)
       cleanup_db(db_path_b)
     end
@@ -315,13 +316,17 @@ defmodule EctoLibSql.SecurityTest do
       end
 
       on_exit(fn ->
+        # Disconnect is handled per-test or state is garbage collected.
         cleanup_db(db_path)
       end)
 
-      {:ok, state: state}
+      {:ok, state: state, db_path: db_path}
     end
 
-    test "concurrent cursor fetches from same connection are safe", %{state: state} do
+    test "concurrent cursor fetches from same connection are safe", %{
+      state: state,
+      db_path: _db_path
+    } do
       # Declare cursor
       {:ok, _query, cursor, _state} =
         EctoLibSql.handle_declare(
@@ -347,14 +352,17 @@ defmodule EctoLibSql.SecurityTest do
       # Collect results - should not crash
       results = Task.await_many(tasks)
 
-      # Verify all operations completed (either success or error, but not crash)
+      # Verify all operations completed (either success or error, but not crash).
       assert length(results) == 5
       assert Enum.all?(results, fn r -> is_tuple(r) end)
 
-      EctoLibSql.disconnect([], state)
+      # Don't disconnect state - it's managed by setup/on_exit.
     end
 
-    test "concurrent transactions on different connections are isolated", %{state: state_a} do
+    test "concurrent transactions on different connections are isolated", %{
+      state: state_a,
+      db_path: _db_path
+    } do
       db_path_b = "test_concurrent2_#{System.unique_integer()}.db"
 
       {:ok, state_b} =
@@ -401,10 +409,10 @@ defmodule EctoLibSql.SecurityTest do
       assert match?({:ok, _, _, _}, result_a)
       assert match?({:ok, _, _, _}, result_b)
 
-      # Cleanup
-      EctoLibSql.handle_commit([], state_a)
-      EctoLibSql.handle_commit([], state_b)
-      EctoLibSql.disconnect([], state_a)
+      # Cleanup - only manage per-test resources.
+      # state_a is managed by setup/on_exit, so don't disconnect it here.
+      {:ok, _, _state_a} = EctoLibSql.handle_commit([], state_a)
+      {:ok, _, _state_b} = EctoLibSql.handle_commit([], state_b)
       EctoLibSql.disconnect([], state_b)
       cleanup_db(db_path_b)
     end

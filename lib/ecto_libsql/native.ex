@@ -311,6 +311,22 @@ defmodule EctoLibSql.Native do
     end
   end
 
+  @doc false
+  # Get a value from a map, supporting both atom and string keys.
+  # This avoids creating atoms at runtime while allowing users to pass
+  # either %{name: value} or %{"name" => value}.
+  defp get_map_value_flexible(map, nil), do: nil
+
+  defp get_map_value_flexible(map, name) when is_binary(name) do
+    # Try atom key first (more common), then string key.
+    atom_key = String.to_existing_atom(name)
+    Map.get(map, atom_key, Map.get(map, name, nil))
+  rescue
+    ArgumentError ->
+      # Atom doesn't exist, try string key only.
+      Map.get(map, name, nil)
+  end
+
   # Cache key for parameter metadata.
   @param_cache_key {__MODULE__, :param_cache}
 
@@ -340,8 +356,9 @@ defmodule EctoLibSql.Native do
 
       param_names ->
         # Cache hit - convert map to positional list using cached order.
+        # Support both atom and string keys in the input map.
         Enum.map(param_names, fn name ->
-          Map.get(param_map, name, nil)
+          get_map_value_flexible(param_map, name)
         end)
     end
   end
@@ -361,13 +378,13 @@ defmodule EctoLibSql.Native do
             _ -> 0
           end
 
-        # Extract parameter names in order.
+        # Extract parameter names in order (kept as strings to avoid atom creation).
         param_names =
           Enum.map(1..param_count, fn idx ->
             case statement_parameter_name(conn_id, stmt_id, idx) do
               name when is_binary(name) ->
-                # Remove prefix (:, @, $) if present.
-                remove_param_prefix(name) |> String.to_atom()
+                # Remove prefix (:, @, $) if present. Keep as string.
+                remove_param_prefix(name)
 
               nil ->
                 # Positional parameter (?) - use nil as marker.
@@ -385,8 +402,9 @@ defmodule EctoLibSql.Native do
         cache_param_names(statement, param_names)
 
         # Convert map to positional list using the names.
+        # Support both atom and string keys in the input map.
         Enum.map(param_names, fn name ->
-          Map.get(param_map, name, nil)
+          get_map_value_flexible(param_map, name)
         end)
 
       {:error, reason} ->
@@ -413,7 +431,8 @@ defmodule EctoLibSql.Native do
               Enum.map(1..count, fn idx ->
                 case statement_parameter_name(conn_id, stmt_id, idx) do
                   name when is_binary(name) ->
-                    remove_param_prefix(name) |> String.to_atom()
+                    # Keep as string to avoid creating atoms at runtime.
+                    remove_param_prefix(name)
 
                   _ ->
                     nil
@@ -421,8 +440,9 @@ defmodule EctoLibSql.Native do
               end)
 
             # Convert map to positional list using the names.
+            # Support both atom and string keys in the input map.
             Enum.map(param_names, fn name ->
-              Map.get(map, name, nil)
+              get_map_value_flexible(map, name)
             end)
 
           0 ->
