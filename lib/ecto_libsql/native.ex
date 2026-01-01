@@ -283,10 +283,30 @@ defmodule EctoLibSql.Native do
     end
   end
 
-  @doc false
-  # Returns list on success, {:error, reason} on failure.
+  @doc """
+  Normalise query arguments to a positional parameter list.
+
+  ## Arguments
+
+  - `conn_id` - The connection identifier
+  - `statement` - The SQL statement (used for named parameter introspection)
+  - `args` - The arguments to normalise; must be a list or map
+
+  ## Returns
+
+  - `list` - Positional parameter list on success
+  - `{:error, reason}` - Error tuple if args is invalid or map conversion fails
+
+  ## Accepted Types
+
+  - **List**: Returned as-is (positional parameters)
+  - **Map**: Converted to positional list using statement parameter introspection
+
+  Any other type returns `{:error, "arguments must be a list or map"}`.
+  """
+  @spec normalise_arguments(String.t(), String.t(), list() | map()) ::
+          list() | {:error, term()}
   def normalise_arguments(conn_id, statement, args) do
-    # If args is already a list, return as-is (positional parameters).
     case args do
       list when is_list(list) ->
         list
@@ -296,8 +316,8 @@ defmodule EctoLibSql.Native do
         # Returns list on success, {:error, reason} on preparation failure.
         map_to_positional_args(conn_id, statement, map)
 
-      _ ->
-        args
+      _other ->
+        {:error, "arguments must be a list or map"}
     end
   end
 
