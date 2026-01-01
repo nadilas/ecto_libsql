@@ -41,22 +41,17 @@ defmodule EctoLibSql.SecurityTest do
       %EctoLibSql.State{} = state_b
       state_b_fake = %{state_b | trx_id: trx_id_a}
 
-      case EctoLibSql.handle_execute(
-             "SELECT 1",
-             [],
-             [],
-             state_b_fake
-           ) do
-        {:error, _reason, _state} ->
-          # Expected - transaction belongs to connection A
-          assert true
+      # Attempting to use connection A's transaction on connection B should fail.
+      # The system must reject cross-connection transaction usage for security.
+      result =
+        EctoLibSql.handle_execute(
+          "SELECT 1",
+          [],
+          [],
+          state_b_fake
+        )
 
-        {:ok, _, _, _} ->
-          # If execution succeeds, the system should prevent the transaction
-          # from being used across connections anyway. The key is no crash.
-          # SQLite will likely error on the transaction ID being invalid
-          assert true
-      end
+      assert {:error, _reason, _state} = result
 
       # Cleanup
       {:ok, _, state_a} = EctoLibSql.handle_commit([], state_a)
