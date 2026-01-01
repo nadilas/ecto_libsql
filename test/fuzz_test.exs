@@ -38,6 +38,7 @@ defmodule EctoLibSql.FuzzTest do
       File.rm(db_path)
       File.rm(db_path <> "-shm")
       File.rm(db_path <> "-wal")
+      File.rm(db_path <> "-journal")
     end)
 
     {:ok, state: state, db_path: db_path}

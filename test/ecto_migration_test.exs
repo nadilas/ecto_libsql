@@ -14,12 +14,21 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
   setup do
     # Start a fresh repo for each test with a unique database file.
     test_db = "z_ecto_libsql_test-migrations_#{:erlang.unique_integer([:positive])}.db"
-    {:ok, _} = start_supervised({TestRepo, database: test_db})
+    {:ok, pid} = start_supervised({TestRepo, database: test_db})
 
     on_exit(fn ->
+      # Stop the repo before cleaning up files.
+      if Process.alive?(pid) do
+        stop_supervised(TestRepo)
+      end
+
+      # Small delay to ensure file handles are released.
+      Process.sleep(10)
+
       File.rm(test_db)
       File.rm(test_db <> "-shm")
       File.rm(test_db <> "-wal")
+      File.rm(test_db <> "-journal")
     end)
 
     # Foreign keys are disabled by default in SQLite - tests that need them will enable them explicitly.

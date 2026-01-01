@@ -38,7 +38,8 @@ defmodule EctoLibSql.SecurityTest do
 
       # Try to use connection A's transaction on connection B by forcing trx_id
       # This tests that transactions are properly scoped to their connection
-      state_b_fake = %EctoLibSql.State{state_b | trx_id: trx_id_a}
+      %EctoLibSql.State{} = state_b
+      state_b_fake = %{state_b | trx_id: trx_id_a}
 
       case EctoLibSql.handle_execute(
              "SELECT 1",
@@ -234,7 +235,7 @@ defmodule EctoLibSql.SecurityTest do
         {:cont, _result, _state} ->
           flunk("Connection B should not access Connection A's cursor")
 
-        {:deallocated, _result, _state} ->
+        {:halt, _result, _state} ->
           flunk("Connection B should not access Connection A's cursor")
       end
 
@@ -309,7 +310,7 @@ defmodule EctoLibSql.SecurityTest do
         )
 
       for i <- 1..100 do
-        {:ok, _, _, state} =
+        {:ok, _, _, _state} =
           EctoLibSql.handle_execute(
             "INSERT INTO concurrent_test (value) VALUES (?)",
             ["value_#{i}"],
@@ -337,7 +338,7 @@ defmodule EctoLibSql.SecurityTest do
 
       # Try to fetch concurrently from multiple processes
       tasks =
-        for i <- 1..5 do
+        for _i <- 1..5 do
           Task.async(fn ->
             EctoLibSql.handle_fetch(
               %EctoLibSql.Query{statement: "SELECT * FROM concurrent_test"},
