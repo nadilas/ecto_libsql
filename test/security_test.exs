@@ -137,9 +137,9 @@ defmodule EctoLibSql.SecurityTest do
           flunk("Connection B should not access Connection A's prepared statement")
       end
 
-      # Cleanup
+      # Cleanup - only manage per-test resources.
+      # state_a is managed by setup/on_exit, so don't disconnect it here.
       EctoLibSql.Native.close_stmt(stmt_id_a)
-      EctoLibSql.disconnect([], state_a)
       EctoLibSql.disconnect([], state_b)
       cleanup_db(db_path_b)
     end
