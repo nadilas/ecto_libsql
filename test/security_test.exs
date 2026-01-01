@@ -177,15 +177,18 @@ defmodule EctoLibSql.SecurityTest do
           state
         )
 
-      for i <- 1..10 do
-        {:ok, _, _, _state} =
-          EctoLibSql.handle_execute(
-            "INSERT INTO test_data (value) VALUES (?)",
-            ["value_#{i}"],
-            [],
-            state
-          )
-      end
+      state =
+        Enum.reduce(1..10, state, fn i, acc_state ->
+          {:ok, _, _, new_state} =
+            EctoLibSql.handle_execute(
+              "INSERT INTO test_data (value) VALUES (?)",
+              ["value_#{i}"],
+              [],
+              acc_state
+            )
+
+          new_state
+        end)
 
       on_exit(fn ->
         # Disconnect is handled per-test or state is garbage collected.
