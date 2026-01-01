@@ -51,7 +51,7 @@ defmodule EctoLibSql.SecurityTest do
           state_b_fake
         )
 
-      assert {:error, _reason, _state} = result
+      assert {:error, _, _} = result
 
       # Cleanup
       {:ok, _, state_a} = EctoLibSql.handle_commit([], state_a)
@@ -113,10 +113,7 @@ defmodule EctoLibSql.SecurityTest do
       {:ok, state: state, db_path: db_path}
     end
 
-    test "connection A cannot access connection B's prepared statement", %{
-      state: state_a,
-      db_path: _db_path
-    } do
+    test "connection A cannot access connection B's prepared statement", %{state: state_a} do
       db_path_b = "test_stmt2_#{System.unique_integer()}.db"
       {:ok, state_b} = EctoLibSql.connect(database: db_path_b)
 
@@ -198,7 +195,7 @@ defmodule EctoLibSql.SecurityTest do
       {:ok, state: state, db_path: db_path}
     end
 
-    test "connection A cannot access connection B's cursor", %{state: state_a, db_path: _db_path} do
+    test "connection A cannot access connection B's cursor", %{state: state_a} do
       db_path_b = "test_cursor2_#{System.unique_integer()}.db"
       {:ok, state_b} = EctoLibSql.connect(database: db_path_b)
 
@@ -212,7 +209,7 @@ defmodule EctoLibSql.SecurityTest do
         )
 
       # Declare cursor on connection A
-      {:ok, _query, cursor_a, _state} =
+      {:ok, _, cursor_a, _} =
         EctoLibSql.handle_declare(
           %EctoLibSql.Query{statement: "SELECT * FROM test_data"},
           [],
@@ -227,14 +224,14 @@ defmodule EctoLibSql.SecurityTest do
              [max_rows: 5],
              state_b
            ) do
-        {:error, _reason, _state} ->
+        {:error, _, _} ->
           # Expected - cursor belongs to A
           assert true
 
-        {:cont, _result, _state} ->
+        {:cont, _, _} ->
           flunk("Connection B should not access Connection A's cursor")
 
-        {:halt, _result, _state} ->
+        {:halt, _, _} ->
           flunk("Connection B should not access Connection A's cursor")
       end
 
@@ -276,7 +273,7 @@ defmodule EctoLibSql.SecurityTest do
              state_b_with_trx_a,
              "sp1"
            ) do
-        {:error, _reason} ->
+        {:error, _} ->
           # Expected - savepoint belongs to A's transaction
           assert true
 
@@ -329,12 +326,9 @@ defmodule EctoLibSql.SecurityTest do
       {:ok, state: state, db_path: db_path}
     end
 
-    test "concurrent cursor fetches from same connection are safe", %{
-      state: state,
-      db_path: _db_path
-    } do
+    test "concurrent cursor fetches from same connection are safe", %{state: state} do
       # Declare cursor
-      {:ok, _query, cursor, _state} =
+      {:ok, _, cursor, _} =
         EctoLibSql.handle_declare(
           %EctoLibSql.Query{statement: "SELECT * FROM concurrent_test"},
           [],
@@ -344,7 +338,7 @@ defmodule EctoLibSql.SecurityTest do
 
       # Try to fetch concurrently from multiple processes
       tasks =
-        for _i <- 1..5 do
+        for _ <- 1..5 do
           Task.async(fn ->
             EctoLibSql.handle_fetch(
               %EctoLibSql.Query{statement: "SELECT * FROM concurrent_test"},
@@ -365,10 +359,7 @@ defmodule EctoLibSql.SecurityTest do
       # Don't disconnect state - it's managed by setup/on_exit.
     end
 
-    test "concurrent transactions on different connections are isolated", %{
-      state: state_a,
-      db_path: _db_path
-    } do
+    test "concurrent transactions on different connections are isolated", %{state: state_a} do
       db_path_b = "test_concurrent2_#{System.unique_integer()}.db"
 
       {:ok, state_b} =
@@ -417,8 +408,8 @@ defmodule EctoLibSql.SecurityTest do
 
       # Cleanup - only manage per-test resources.
       # state_a is managed by setup/on_exit, so don't disconnect it here.
-      {:ok, _, _state_a} = EctoLibSql.handle_commit([], state_a)
-      {:ok, _, _state_b} = EctoLibSql.handle_commit([], state_b)
+      {:ok, _, _} = EctoLibSql.handle_commit([], state_a)
+      {:ok, _, _} = EctoLibSql.handle_commit([], state_b)
       EctoLibSql.disconnect([], state_b)
       cleanup_db(db_path_b)
     end
@@ -439,7 +430,7 @@ defmodule EctoLibSql.SecurityTest do
         )
 
       # Create various resources
-      {:ok, _query, cursor, _state} =
+      {:ok, _, cursor, _} =
         EctoLibSql.handle_declare(
           %EctoLibSql.Query{statement: "SELECT * FROM cleanup_test"},
           [],
@@ -621,11 +612,11 @@ defmodule EctoLibSql.SecurityTest do
              [],
              state_b
            ) do
-        {:error, _reason, _state} ->
+        {:error, _, _} ->
           # Expected - table_a doesn't exist in db_b
           assert true
 
-        {:ok, _, _result, _state} ->
+        {:ok, _, _, _} ->
           flunk("Connection B should not see table_a from connection A's database")
       end
 

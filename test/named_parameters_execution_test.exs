@@ -53,7 +53,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Verify insert worked
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE id = :id",
           %{id: 1},
@@ -76,7 +76,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Query with named parameters
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE name = :name AND age = :age",
           %{name: "Alice", age: 30},
@@ -108,7 +108,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Verify update
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT age FROM users WHERE id = :id",
           %{id: 1},
@@ -139,7 +139,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Verify delete
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT COUNT(*) FROM users",
           [],
@@ -170,7 +170,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Verify both records exist
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT COUNT(*) FROM users",
           [],
@@ -193,7 +193,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Verify insert
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE id = @id",
           %{id: 1},
@@ -216,7 +216,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Query with @ prefix
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE email = @email",
           %{email: "david@example.com"},
@@ -239,7 +239,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Verify insert
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE id = $id",
           %{id: 1},
@@ -262,7 +262,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Query with $ prefix
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE age > $min_age",
           %{min_age: 40},
@@ -285,7 +285,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Verify insert
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE id = ?",
           [1],
@@ -298,7 +298,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
     end
 
     test "Empty parameters work", %{state: state} do
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT 1 as num",
           [],
@@ -338,7 +338,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
       {:ok, _} = EctoLibSql.Native.commit(state)
 
       # Verify persist - use original state which is now out of transaction
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT COUNT(*) FROM users",
           [],
@@ -365,7 +365,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
       {:ok, _} = EctoLibSql.Native.rollback(state)
 
       # Verify rolled back - use original state which is now out of transaction
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT COUNT(*) FROM users",
           [],
@@ -416,7 +416,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
       EctoLibSql.Native.close_stmt(stmt_id)
 
       # Verify the insert worked.
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE id = 1",
           [],
@@ -462,7 +462,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
       EctoLibSql.Native.close_stmt(stmt_id)
 
       # Verify.
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE id = 2",
           [],
@@ -507,7 +507,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Verify insert succeeded
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE id = :id",
           %{id: 1},
@@ -528,7 +528,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Verify insert with NULLs
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE id = :id",
           %{id: 1},
@@ -552,7 +552,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
 
       # Query using :Name (uppercase N) in SQL but provide :name (lowercase) in params.
       # The parameter should NOT match due to case sensitivity.
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE name = :Name",
           %{name: "Mike"},
@@ -564,7 +564,7 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
       assert result.num_rows == 0
 
       # Now use matching case - should work.
-      {:ok, _, result, _state} =
+      {:ok, _, result, _} =
         EctoLibSql.handle_execute(
           "SELECT * FROM users WHERE name = :name",
           %{name: "Mike"},
