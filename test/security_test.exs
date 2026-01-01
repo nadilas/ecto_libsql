@@ -245,7 +245,7 @@ defmodule EctoLibSql.SecurityTest do
   end
 
   describe "Savepoint Isolation ✅" do
-    test "savepoint belongs to owning transaction", %{} do
+    test "savepoint belongs to owning transaction" do
       db_a = "test_sp_#{System.unique_integer()}.db"
       db_b = "test_sp2_#{System.unique_integer()}.db"
       {:ok, state_a} = EctoLibSql.connect(database: db_a)
@@ -308,15 +308,18 @@ defmodule EctoLibSql.SecurityTest do
           state
         )
 
-      for i <- 1..100 do
-        {:ok, _, _, _state} =
-          EctoLibSql.handle_execute(
-            "INSERT INTO concurrent_test (value) VALUES (?)",
-            ["value_#{i}"],
-            [],
-            state
-          )
-      end
+      state =
+        Enum.reduce(1..100, state, fn i, acc_state ->
+          {:ok, _, _, new_state} =
+            EctoLibSql.handle_execute(
+              "INSERT INTO concurrent_test (value) VALUES (?)",
+              ["value_#{i}"],
+              [],
+              acc_state
+            )
+
+          new_state
+        end)
 
       on_exit(fn ->
         # Disconnect is handled per-test or state is garbage collected.
