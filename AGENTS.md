@@ -1404,11 +1404,11 @@ Create, update, and manipulate JSON structures:
 
 ```elixir
 # Quote a value for JSON
-{:ok, quoted} = JSON.quote(state, "hello \"world\"")
+{:ok, quoted} = JSON.json_quote(state, "hello \"world\"")
 # Returns: {:ok, "\"hello \\\"world\\\"\""}
 
 # Get JSON array/object length (SQLite 3.9.0+)
-{:ok, len} = JSON.length(state, ~s([1,2,3,4,5]))
+{:ok, len} = JSON.json_length(state, ~s([1,2,3,4,5]))
 # Returns: {:ok, 5}
 
 # Get JSON structure depth (SQLite 3.9.0+)

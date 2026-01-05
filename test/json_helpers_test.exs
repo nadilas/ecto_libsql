@@ -323,6 +323,38 @@ defmodule EctoLibSql.JSONHelpersTest do
       fragment = JSON.arrow_fragment("items", 0, :double_arrow)
       assert fragment == "items ->> 0"
     end
+
+    test "escapes single quotes in path to prevent SQL injection" do
+      fragment = JSON.arrow_fragment("settings", "user'name")
+      assert fragment == "settings -> 'user''name'"
+    end
+
+    test "escapes single quotes in path with double-arrow operator" do
+      fragment = JSON.arrow_fragment("settings", "user'name", :double_arrow)
+      assert fragment == "settings ->> 'user''name'"
+    end
+
+    test "validates json_column is a safe identifier" do
+      assert_raise ArgumentError, fn ->
+        JSON.arrow_fragment("settings; DROP TABLE users", "theme")
+      end
+    end
+
+    test "validates json_column rejects invalid identifiers with special chars" do
+      assert_raise ArgumentError, fn ->
+        JSON.arrow_fragment("settings.theme", "key")
+      end
+    end
+
+    test "allows valid identifiers with underscores and numbers" do
+      fragment = JSON.arrow_fragment("user_settings_123", "theme")
+      assert fragment == "user_settings_123 -> 'theme'"
+    end
+
+    test "allows valid identifiers starting with underscore" do
+      fragment = JSON.arrow_fragment("_private_data", "key")
+      assert fragment == "_private_data -> 'key'"
+    end
   end
 
   describe "Ecto integration" do
@@ -413,17 +445,17 @@ defmodule EctoLibSql.JSONHelpersTest do
 
   describe "json_quote/2" do
     test "quotes a simple string", %{state: state} do
-      {:ok, quoted} = JSON.quote(state, "hello")
+      {:ok, quoted} = JSON.json_quote(state, "hello")
       assert quoted == "\"hello\""
     end
 
     test "escapes special characters in strings", %{state: state} do
-      {:ok, quoted} = JSON.quote(state, "hello \"world\"")
+      {:ok, quoted} = JSON.json_quote(state, "hello \"world\"")
       assert quoted == "\"hello \\\"world\\\"\""
     end
 
     test "quotes numbers as strings", %{state: state} do
-      {:ok, quoted} = JSON.quote(state, "42")
+      {:ok, quoted} = JSON.json_quote(state, "42")
       assert quoted == "\"42\""
     end
   end
@@ -431,7 +463,7 @@ defmodule EctoLibSql.JSONHelpersTest do
   describe "json_length/2 and json_length/3" do
     test "gets length of JSON array", %{state: state} do
       # json_length is available in SQLite 3.9.0+ (libSQL 0.3.0+)
-      case JSON.length(state, ~s([1,2,3,4,5])) do
+      case JSON.json_length(state, ~s([1,2,3,4,5])) do
         {:ok, len} -> assert len == 5
         {:error, "SQLite failure: `no such function: json_length`"} -> :skip
         {:error, reason} -> raise reason
@@ -439,7 +471,7 @@ defmodule EctoLibSql.JSONHelpersTest do
     end
 
     test "gets number of keys in JSON object", %{state: state} do
-      case JSON.length(state, ~s({"a":1,"b":2,"c":3})) do
+      case JSON.json_length(state, ~s({"a":1,"b":2,"c":3})) do
         {:ok, len} -> assert len == 3
         {:error, "SQLite failure: `no such function: json_length`"} -> :skip
         {:error, reason} -> raise reason
@@ -447,7 +479,7 @@ defmodule EctoLibSql.JSONHelpersTest do
     end
 
     test "returns nil for scalar values", %{state: state} do
-      case JSON.length(state, "42") do
+      case JSON.json_length(state, "42") do
         {:ok, len} -> assert len == nil
         {:error, "SQLite failure: `no such function: json_length`"} -> :skip
         {:error, reason} -> raise reason
@@ -457,7 +489,7 @@ defmodule EctoLibSql.JSONHelpersTest do
     test "gets length of nested array using path", %{state: state} do
       json = ~s({"items":[1,2,3]})
 
-      case JSON.length(state, json, "$.items") do
+      case JSON.json_length(state, json, "$.items") do
         {:ok, len} -> assert len == 3
         {:error, "SQLite failure: `no such function: json_length`"} -> :skip
         {:error, reason} -> raise reason

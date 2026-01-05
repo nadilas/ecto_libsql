@@ -109,29 +109,14 @@ defmodule EctoLibSql.JSON do
   """
   @spec extract(State.t(), String.t() | binary, String.t()) :: {:ok, term()} | {:error, term()}
   def extract(%State{} = state, json, path) when is_binary(json) and is_binary(path) do
-    # Execute: SELECT json_extract(?, ?)
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           "SELECT json_extract(?, ?)",
-           [json, path]
-         ) do
-      %{"rows" => [[value]]} ->
-        {:ok, value}
-
-      %{"rows" => []} ->
-        {:ok, nil}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      "SELECT json_extract(?, ?)",
+      [json, path]
+    )
+    |> handle_single_result()
   end
 
   @doc """
@@ -159,28 +144,14 @@ defmodule EctoLibSql.JSON do
   """
   @spec type(State.t(), String.t() | binary, String.t()) :: {:ok, String.t()} | {:error, term()}
   def type(%State{} = state, json, path \\ "$") when is_binary(json) and is_binary(path) do
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           "SELECT json_type(?, ?)",
-           [json, path]
-         ) do
-      %{"rows" => [[type_val]]} ->
-        {:ok, type_val}
-
-      %{"rows" => []} ->
-        {:ok, nil}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      "SELECT json_type(?, ?)",
+      [json, path]
+    )
+    |> handle_single_result()
   end
 
   @doc """
@@ -205,28 +176,14 @@ defmodule EctoLibSql.JSON do
   """
   @spec is_valid(State.t(), String.t()) :: {:ok, boolean()} | {:error, term()}
   def is_valid(%State{} = state, json) when is_binary(json) do
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           "SELECT json_valid(?)",
-           [json]
-         ) do
-      %{"rows" => [[1]]} ->
-        {:ok, true}
-
-      %{"rows" => [[0]]} ->
-        {:ok, false}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      "SELECT json_valid(?)",
+      [json]
+    )
+    |> handle_boolean_result()
   end
 
   @doc """
@@ -260,25 +217,14 @@ defmodule EctoLibSql.JSON do
     placeholders = Enum.map(values, fn _ -> "?" end) |> Enum.join(",")
     sql = "SELECT json_array(#{placeholders})"
 
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           sql,
-           values
-         ) do
-      %{"rows" => [[json_array]]} ->
-        {:ok, json_array}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      sql,
+      values
+    )
+    |> handle_single_result()
   end
 
   @doc """
@@ -325,25 +271,14 @@ defmodule EctoLibSql.JSON do
       placeholders = Enum.map(pairs, fn _ -> "?" end) |> Enum.join(",")
       sql = "SELECT json_object(#{placeholders})"
 
-      case Native.query_args(
-             state.conn_id,
-             state.mode,
-             :disable_sync,
-             sql,
-             pairs
-           ) do
-        %{"rows" => [[json_object]]} ->
-          {:ok, json_object}
-
-        %{"error" => reason} ->
-          {:error, reason}
-
-        {:error, reason} ->
-          {:error, reason}
-
-        other ->
-          {:error, {:unexpected_response, other}}
-      end
+      Native.query_args(
+        state.conn_id,
+        state.mode,
+        :disable_sync,
+        sql,
+        pairs
+      )
+      |> handle_single_result()
     end
   end
 
@@ -383,30 +318,14 @@ defmodule EctoLibSql.JSON do
   def each(%State{} = state, json, path \\ "$") when is_binary(json) and is_binary(path) do
     sql = "SELECT key, value, type FROM json_each(?, ?)"
 
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           sql,
-           [json, path]
-         ) do
-      %{"rows" => rows} ->
-        items =
-          Enum.map(rows, fn [key, value, type] ->
-            {key, value, type}
-          end)
-
-        {:ok, items}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      sql,
+      [json, path]
+    )
+    |> handle_multiple_rows(fn [key, value, type] -> {key, value, type} end)
   end
 
   @doc """
@@ -442,30 +361,14 @@ defmodule EctoLibSql.JSON do
   def tree(%State{} = state, json, path \\ "$") when is_binary(json) and is_binary(path) do
     sql = "SELECT fullkey, atom, type FROM json_tree(?, ?)"
 
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           sql,
-           [json, path]
-         ) do
-      %{"rows" => rows} ->
-        items =
-          Enum.map(rows, fn [fullkey, atom, type] ->
-            {fullkey, atom, type}
-          end)
-
-        {:ok, items}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      sql,
+      [json, path]
+    )
+    |> handle_multiple_rows(fn [fullkey, atom, type] -> {fullkey, atom, type} end)
   end
 
   @doc """
@@ -514,25 +417,14 @@ defmodule EctoLibSql.JSON do
         _ -> raise ArgumentError, "format must be :json or :jsonb"
       end
 
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           sql,
-           [json]
-         ) do
-      %{"rows" => [[converted]]} ->
-        {:ok, converted}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      sql,
+      [json]
+    )
+    |> handle_single_result()
   end
 
   @doc """
@@ -577,60 +469,89 @@ defmodule EctoLibSql.JSON do
   def arrow_fragment(json_column, path, operator \\ :arrow)
 
   def arrow_fragment(json_column, path, :arrow) when is_binary(json_column) and is_binary(path) do
-    "#{json_column} -> '#{path}'"
+    validate_identifier!(json_column)
+    escaped_path = escape_sql_string(path)
+    "#{json_column} -> '#{escaped_path}'"
   end
 
   def arrow_fragment(json_column, index, :arrow)
       when is_binary(json_column) and is_integer(index) do
+    validate_identifier!(json_column)
     "#{json_column} -> #{index}"
   end
 
   def arrow_fragment(json_column, path, :double_arrow)
       when is_binary(json_column) and is_binary(path) do
-    "#{json_column} ->> '#{path}'"
+    validate_identifier!(json_column)
+    escaped_path = escape_sql_string(path)
+    "#{json_column} ->> '#{escaped_path}'"
   end
 
   def arrow_fragment(json_column, index, :double_arrow)
       when is_binary(json_column) and is_integer(index) do
+    validate_identifier!(json_column)
     "#{json_column} ->> #{index}"
   end
 
-  @doc """
-  Quote a value for use in JSON.
+  # Private helper: Validate json_column is a safe identifier
+  defp validate_identifier!(identifier) do
+    safe_identifier_pattern = ~r/^[a-zA-Z_][a-zA-Z0-9_]*$/
 
-  Converts SQL values to properly escaped JSON string representation.
-  Useful for building JSON values dynamically.
+    unless String.match?(identifier, safe_identifier_pattern) do
+      raise ArgumentError,
+            "json_column must be a valid SQL identifier (alphanumeric, underscore, starting with letter or underscore), got: #{inspect(identifier)}"
+    end
+  end
 
-  ## Parameters
+  # Private helper: Escape single quotes in SQL strings by doubling them
+  defp escape_sql_string(str) do
+    String.replace(str, "'", "''")
+  end
 
-    - state: Connection state
-    - value: Value to quote (string, number, nil, etc.)
+  # Private helpers: Result handling patterns
+  # All Native.query_args/5 calls return a response map that needs handling.
+  # These helpers reduce duplication and provide consistent error handling.
 
-  ## Returns
+  @doc false
+  defp handle_single_result(response) do
+    case response do
+      %{"rows" => [[value]]} -> {:ok, value}
+      %{"rows" => []} -> {:ok, nil}
+      %{"error" => reason} -> {:error, reason}
+      {:error, reason} -> {:error, reason}
+      other -> {:error, {:unexpected_response, other}}
+    end
+  end
 
-    - `{:ok, json_string}` - Properly quoted JSON string
-    - `{:error, reason}` on failure
+  @doc false
+  defp handle_boolean_result(response) do
+    case response do
+      %{"rows" => [[1]]} -> {:ok, true}
+      %{"rows" => [[0]]} -> {:ok, false}
+      %{"error" => reason} -> {:error, reason}
+      {:error, reason} -> {:error, reason}
+      other -> {:error, {:unexpected_response, other}}
+    end
+  end
 
-  ## Examples
+  @doc false
+  defp handle_nullable_result(response) do
+    case response do
+      %{"rows" => [[value]]} -> {:ok, value}
+      %{"rows" => [[]]} -> {:ok, nil}
+      %{"rows" => []} -> {:ok, nil}
+      %{"error" => reason} -> {:error, reason}
+      {:error, reason} -> {:error, reason}
+      other -> {:error, {:unexpected_response, other}}
+    end
+  end
 
-      {:ok, quoted} = EctoLibSql.JSON.quote(state, "hello \"world\"")
-      # Returns: {:ok, "\"hello \\\"world\\\"\""}
-
-      {:ok, quoted} = EctoLibSql.JSON.quote(state, "test")
-      # Returns: {:ok, "\"test\""}
-
-  """
-  @spec quote(State.t(), term()) :: {:ok, String.t()} | {:error, term()}
-  def quote(%State{} = state, value) do
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           "SELECT json_quote(?)",
-           [value]
-         ) do
-      %{"rows" => [[quoted]]} ->
-        {:ok, quoted}
+  @doc false
+  defp handle_multiple_rows(response, transform_fn) do
+    case response do
+      %{"rows" => rows} ->
+        items = Enum.map(rows, transform_fn)
+        {:ok, items}
 
       %{"error" => reason} ->
         {:error, reason}
@@ -644,7 +565,48 @@ defmodule EctoLibSql.JSON do
   end
 
   @doc """
+  Quote a value for use in JSON.
+
+  Converts SQL values to properly escaped JSON string representation.
+  Useful for building JSON values dynamically.
+
+  Named `json_quote/2` to avoid shadowing Elixir's `Kernel.quote/2` macro.
+
+  ## Parameters
+
+    - state: Connection state
+    - value: Value to quote (string, number, nil, etc.)
+
+  ## Returns
+
+    - `{:ok, json_string}` - Properly quoted JSON string
+    - `{:error, reason}` on failure
+
+  ## Examples
+
+      {:ok, quoted} = EctoLibSql.JSON.json_quote(state, "hello \"world\"")
+      # Returns: {:ok, "\"hello \\\"world\\\"\""}
+
+      {:ok, quoted} = EctoLibSql.JSON.json_quote(state, "test")
+      # Returns: {:ok, "\"test\""}
+
+  """
+  @spec json_quote(State.t(), term()) :: {:ok, String.t()} | {:error, term()}
+  def json_quote(%State{} = state, value) do
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      "SELECT json_quote(?)",
+      [value]
+    )
+    |> handle_single_result()
+  end
+
+  @doc """
   Get the length of a JSON array or number of keys in JSON object.
+
+  Named `json_length/2,3` to avoid shadowing Elixir's `Kernel.length/1`.
 
   ## Parameters
 
@@ -660,38 +622,24 @@ defmodule EctoLibSql.JSON do
 
   ## Examples
 
-      {:ok, len} = EctoLibSql.JSON.length(state, ~s([1,2,3]))
+      {:ok, len} = EctoLibSql.JSON.json_length(state, ~s([1,2,3]))
       # Returns: {:ok, 3}
 
-      {:ok, len} = EctoLibSql.JSON.length(state, ~s({"a":1,"b":2}))
+      {:ok, len} = EctoLibSql.JSON.json_length(state, ~s({"a":1,"b":2}))
       # Returns: {:ok, 2}
 
   """
-  @spec length(State.t(), String.t() | binary, String.t()) ::
+  @spec json_length(State.t(), String.t() | binary, String.t()) ::
           {:ok, non_neg_integer() | nil} | {:error, term()}
-  def length(%State{} = state, json, path \\ "$") when is_binary(json) and is_binary(path) do
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           "SELECT json_length(?, ?)",
-           [json, path]
-         ) do
-      %{"rows" => [[len]]} ->
-        {:ok, len}
-
-      %{"rows" => []} ->
-        {:ok, nil}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+  def json_length(%State{} = state, json, path \\ "$") when is_binary(json) and is_binary(path) do
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      "SELECT json_length(?, ?)",
+      [json, path]
+    )
+    |> handle_single_result()
   end
 
   @doc """
@@ -724,25 +672,14 @@ defmodule EctoLibSql.JSON do
   """
   @spec depth(State.t(), String.t() | binary) :: {:ok, pos_integer()} | {:error, term()}
   def depth(%State{} = state, json) when is_binary(json) do
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           "SELECT json_depth(?)",
-           [json]
-         ) do
-      %{"rows" => [[d]]} ->
-        {:ok, d}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      "SELECT json_depth(?)",
+      [json]
+    )
+    |> handle_single_result()
   end
 
   @doc """
@@ -779,25 +716,14 @@ defmodule EctoLibSql.JSON do
 
     args = [json] ++ paths_list
 
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           sql,
-           args
-         ) do
-      %{"rows" => [[result]]} ->
-        {:ok, result}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      sql,
+      args
+    )
+    |> handle_single_result()
   end
 
   @doc """
@@ -829,25 +755,14 @@ defmodule EctoLibSql.JSON do
   @spec set(State.t(), String.t() | binary, String.t(), term()) ::
           {:ok, String.t()} | {:error, term()}
   def set(%State{} = state, json, path, value) when is_binary(json) and is_binary(path) do
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           "SELECT json_set(?, ?, ?)",
-           [json, path, value]
-         ) do
-      %{"rows" => [[result]]} ->
-        {:ok, result}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      "SELECT json_set(?, ?, ?)",
+      [json, path, value]
+    )
+    |> handle_single_result()
   end
 
   @doc """
@@ -880,25 +795,14 @@ defmodule EctoLibSql.JSON do
   @spec replace(State.t(), String.t() | binary, String.t(), term()) ::
           {:ok, String.t()} | {:error, term()}
   def replace(%State{} = state, json, path, value) when is_binary(json) and is_binary(path) do
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           "SELECT json_replace(?, ?, ?)",
-           [json, path, value]
-         ) do
-      %{"rows" => [[result]]} ->
-        {:ok, result}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      "SELECT json_replace(?, ?, ?)",
+      [json, path, value]
+    )
+    |> handle_single_result()
   end
 
   @doc """
@@ -930,25 +834,14 @@ defmodule EctoLibSql.JSON do
   @spec insert(State.t(), String.t() | binary, String.t(), term()) ::
           {:ok, String.t()} | {:error, term()}
   def insert(%State{} = state, json, path, value) when is_binary(json) and is_binary(path) do
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           "SELECT json_insert(?, ?, ?)",
-           [json, path, value]
-         ) do
-      %{"rows" => [[result]]} ->
-        {:ok, result}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      "SELECT json_insert(?, ?, ?)",
+      [json, path, value]
+    )
+    |> handle_single_result()
   end
 
   @doc """
@@ -977,25 +870,14 @@ defmodule EctoLibSql.JSON do
   @spec patch(State.t(), String.t() | binary, String.t() | binary) ::
           {:ok, String.t()} | {:error, term()}
   def patch(%State{} = state, json, patch_json) when is_binary(json) and is_binary(patch_json) do
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           "SELECT json_patch(?, ?)",
-           [json, patch_json]
-         ) do
-      %{"rows" => [[result]]} ->
-        {:ok, result}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      "SELECT json_patch(?, ?)",
+      [json, patch_json]
+    )
+    |> handle_single_result()
   end
 
   @doc """
@@ -1024,30 +906,13 @@ defmodule EctoLibSql.JSON do
   @spec keys(State.t(), String.t() | binary, String.t()) ::
           {:ok, String.t() | nil} | {:error, term()}
   def keys(%State{} = state, json, path \\ "$") when is_binary(json) and is_binary(path) do
-    case Native.query_args(
-           state.conn_id,
-           state.mode,
-           :disable_sync,
-           "SELECT json_keys(?, ?)",
-           [json, path]
-         ) do
-      %{"rows" => [[keys_json]]} ->
-        {:ok, keys_json}
-
-      %{"rows" => [[]]} ->
-        {:ok, nil}
-
-      %{"rows" => []} ->
-        {:ok, nil}
-
-      %{"error" => reason} ->
-        {:error, reason}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      other ->
-        {:error, {:unexpected_response, other}}
-    end
+    Native.query_args(
+      state.conn_id,
+      state.mode,
+      :disable_sync,
+      "SELECT json_keys(?, ?)",
+      [json, path]
+    )
+    |> handle_nullable_result()
   end
 end
