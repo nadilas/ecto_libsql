@@ -89,8 +89,13 @@ defmodule EctoLibSql.JSON do
 
   ## Returns
 
-    - `{:ok, value}` - Extracted value, or nil if path doesn't exist
-    - `{:error, reason}` on failure
+  The return type depends on the extracted JSON value:
+    - `{:ok, string}` - For JSON text values (e.g., "dark")
+    - `{:ok, integer}` - For JSON integer values (e.g., 30)
+    - `{:ok, float}` - For JSON real/float values (e.g., 99.99)
+    - `{:ok, nil}` - For JSON null values or non-existent paths
+    - `{:ok, json_text}` - For JSON objects/arrays, returned as JSON text string
+    - `{:error, reason}` - On query failure
 
   ## Examples
 
@@ -100,14 +105,22 @@ defmodule EctoLibSql.JSON do
       {:ok, age} = EctoLibSql.JSON.extract(state, ~s({"user":{"age":30}}), "$.user.age")
       # Returns: {:ok, 30}
 
+      {:ok, items} = EctoLibSql.JSON.extract(state, ~s({"items":[1,2,3]}), "$.items")
+      # Returns: {:ok, "[1,2,3]"}  (JSON array as text)
+
+      {:ok, nil} = EctoLibSql.JSON.extract(state, ~s({"a":1}), "$.missing")
+      # Returns: {:ok, nil}  (path doesn't exist)
+
   ## Notes
 
-  - Returns JSON types as-is (objects and arrays returned as JSON text)
-  - Use json_extract to preserve JSON structure, or ->> operator to convert to SQL types
-  - Works with both text JSON and JSONB binary format
+  - JSON objects and arrays are returned as JSON text strings
+  - Use `-> operator in SQL queries to preserve JSON structure, or `->> operator to convert to SQL types
+  - Works with both text JSON and JSONB binary format (format conversion is automatic)
+  - For nested JSON structures, you can chain extractions or use JSON paths like "$.user.address.city"
 
   """
-  @spec extract(State.t(), String.t() | binary, String.t()) :: {:ok, term()} | {:error, term()}
+  @spec extract(State.t(), String.t() | binary, String.t()) ::
+          {:ok, String.t() | integer() | float() | nil} | {:error, term()}
   def extract(%State{} = state, json, path) when is_binary(json) and is_binary(path) do
     Native.query_args(
       state.conn_id,
@@ -509,8 +522,19 @@ defmodule EctoLibSql.JSON do
   end
 
   # Private helpers: Result handling patterns
-  # All Native.query_args/5 calls return a response map that needs handling.
+  # All Native.query_args/5 calls return a response map from Rust that needs handling.
   # These helpers reduce duplication and provide consistent error handling.
+  #
+  # Expected response shape from Native.query_args/5:
+  #   %{
+  #     "columns" => [list of column names],
+  #     "rows" => [list of result rows, where each row is a list of values],
+  #     "num_rows" => total number of rows
+  #   }
+  #
+  # Error responses are:
+  #   %{"error" => reason_string}  (from Rust)
+  #   {:error, reason}             (from Elixir error handling)
 
   @doc false
   defp handle_single_result(response) do
@@ -702,7 +726,8 @@ defmodule EctoLibSql.JSON do
       # Returns: {:ok, "{\"a\":1,\"c\":3}"}
 
       {:ok, json} = EctoLibSql.JSON.remove(state, ~s([1,2,3,4,5]), ["$[0]", "$[2]"])
-      # Returns: {:ok, "[2,4,5]"}
+      # Returns: {:ok, "[2,3,5]"}
+      # Note: Paths are removed in order; after removing $[0], the original $[2] is now at $[1]
 
   """
   @spec remove(State.t(), String.t() | binary, String.t() | [String.t()]) ::
@@ -845,26 +870,52 @@ defmodule EctoLibSql.JSON do
   end
 
   @doc """
-  Apply a JSON patch to modify JSON.
+  Apply a JSON Merge Patch to modify JSON (RFC 7396).
 
-  The patch is itself a JSON object where keys are paths and values are the updates to apply.
-  Effectively performs multiple set/replace operations in one call.
+  Implements RFC 7396 JSON Merge Patch semantics. The patch is a JSON object where:
+  - **Top-level keys** are object keys in the target, not JSON paths
+  - **Values** replace the corresponding object values in the target
+  - **Nested objects** are merged recursively
+  - **null values** remove the key from the target object
+
+  To update nested structures, the patch object must reflect the nesting level.
 
   ## Parameters
 
     - state: Connection state
-    - json: JSON text or JSONB binary data
-    - patch: JSON patch object (keys are paths, values are replacements)
+    - json: JSON text or JSONB binary data (must be an object)
+    - patch: JSON object with merge patch semantics (keys are object keys, not paths)
 
   ## Returns
 
-    - `{:ok, modified_json}` - JSON after applying patch
+    - `{:ok, modified_json}` - JSON after applying merge patch
     - `{:error, reason}` on failure
 
   ## Examples
 
-      {:ok, json} = EctoLibSql.JSON.patch(state, ~s({"a":1,"b":2}), ~s({"$.a":10,"$.c":3}))
-      # Returns: {:ok, "{\"a\":10,\"b\":2,\"c\":3}"}
+      # Top-level key replacement
+      {:ok, json} = EctoLibSql.JSON.patch(state, ~s({"a":1,"b":2}), ~s({"a":10}))
+      # Returns: {:ok, "{\"a\":10,\"b\":2}"}
+
+      # Add new top-level key
+      {:ok, json} = EctoLibSql.JSON.patch(state, ~s({"a":1,"b":2}), ~s({"c":3}))
+      # Returns: {:ok, "{\"a\":1,\"b\":2,\"c\":3}"}
+
+      # Remove key with null
+      {:ok, json} = EctoLibSql.JSON.patch(state, ~s({"a":1,"b":2,"c":3}), ~s({"b":null}))
+      # Returns: {:ok, "{\"a\":1,\"c\":3}"}
+
+      # Nested object merge (replaces entire nested object)
+      {:ok, json} = EctoLibSql.JSON.patch(state, ~s({"user":{"name":"Alice","age":30}}), ~s({"user":{"age":31}}))
+      # Returns: {:ok, "{\"user\":{\"age\":31}}"}  (replaces entire user object, not a deep merge)
+
+  ## Notes
+
+  - This implements RFC 7396 JSON Merge Patch, NOT RFC 6902 JSON Patch
+  - Object keys in the patch are literal keys, not JSON paths (use "a" not "$.a")
+  - For nested structures, the patch replaces the entire value at that key (not a deep recursive merge)
+  - To perform deep merges or path-based updates, use `json_set/4` or `json_replace/4` instead
+  - Works with both text JSON and JSONB binary format
 
   """
   @spec patch(State.t(), String.t() | binary, String.t() | binary) ::

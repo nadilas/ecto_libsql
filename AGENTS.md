@@ -1359,9 +1359,14 @@ fragment = JSON.arrow_fragment("settings", "theme")
 fragment = JSON.arrow_fragment("settings", "theme", :double_arrow)
 # Returns: "settings ->> 'theme'"
 
-# Use in Ecto queries
+# Use in Ecto queries - Option 1: Using the helper function
+arrow_sql = JSON.arrow_fragment("data", "active", :double_arrow)
 from u in User,
-  where: fragment(JSON.arrow_fragment("data", "active", :double_arrow), "=", true)
+  where: fragment(arrow_sql <> " = ?", true)
+
+# Option 2: Direct inline SQL (simpler approach)
+from u in User,
+  where: fragment("data ->> 'active' = ?", true)
 ```
 
 #### Ecto Integration
@@ -1388,9 +1393,14 @@ from u in User,
   where: fragment("json_extract(?, ?) = ?", u.settings, "$.theme", "dark"),
   select: u.name
 
-# Or using the helpers
+# Or using the helpers - Option 1: Arrow fragment helper
+arrow_sql = JSON.arrow_fragment("settings", "theme", :double_arrow)
 from u in User,
-  where: fragment(JSON.arrow_fragment("settings", "theme", :double_arrow), "=", "dark")
+  where: fragment(arrow_sql <> " = ?", "dark")
+
+# Option 2: Direct inline SQL (simpler for static fields)
+from u in User,
+  where: fragment("settings ->> 'theme' = ?", "dark")
 
 # Update JSON fields
 from u in User,
@@ -1435,9 +1445,14 @@ Create, update, and manipulate JSON structures:
 {:ok, json} = JSON.remove(state, ~s({"a":1,"b":2,"c":3}), ["$.a", "$.c"])
 # Returns: {:ok, "{\"b\":2}"}
 
-# Apply a JSON patch
+# Apply a JSON Merge Patch (RFC 7396)
+# Keys in patch are object keys, not JSON paths
 {:ok, json} = JSON.patch(state, ~s({"a":1,"b":2}), ~s({"a":10,"c":3}))
 # Returns: {:ok, "{\"a\":10,\"b\":2,\"c\":3}"}
+
+# Remove a key by patching with null
+{:ok, json} = JSON.patch(state, ~s({"a":1,"b":2,"c":3}), ~s({"b":null}))
+# Returns: {:ok, "{\"a\":1,\"c\":3}"}
 
 # Get all keys from a JSON object (SQLite 3.9.0+)
 {:ok, keys} = JSON.keys(state, ~s({"name":"Alice","age":30}))
@@ -1535,34 +1550,46 @@ settings = ~s({"theme":"dark","notifications":true,"language":"es"})
 # Returns: {:ok, %{valid: true, type: "object", depth: 2}}
 ```
 
-#### Comparison: Set vs Replace vs Insert
+#### Comparison: Set vs Replace vs Insert vs Patch
 
-The three modification functions have different behaviors:
+The modification functions have different behaviors:
 
 ```elixir
 json = ~s({"a":1,"b":2})
 
-# SET: Creates or replaces any path
+# SET: Creates or replaces any path (uses JSON paths like "$.key")
 {:ok, result} = JSON.set(state, json, "$.c", 3)
 # Result: {"a":1,"b":2,"c":3}
 
 {:ok, result} = JSON.set(state, json, "$.a", 100)
 # Result: {"a":100,"b":2}
 
-# REPLACE: Only updates existing paths, ignores new paths
+# REPLACE: Only updates existing paths, ignores new paths (uses JSON paths)
 {:ok, result} = JSON.replace(state, json, "$.c", 3)
 # Result: {"a":1,"b":2}  (c not added)
 
 {:ok, result} = JSON.replace(state, json, "$.a", 100)
 # Result: {"a":100,"b":2}  (existing path updated)
 
-# INSERT: Adds new values without replacing existing ones
+# INSERT: Adds new values without replacing existing ones (uses JSON paths)
 {:ok, result} = JSON.insert(state, json, "$.c", 3)
 # Result: {"a":1,"b":2,"c":3}
 
 {:ok, result} = JSON.insert(state, json, "$.a", 100)
 # Result: {"a":1,"b":2}  (existing path unchanged)
+
+# PATCH: Applies JSON Merge Patch (RFC 7396) - keys are object keys, not paths
+{:ok, result} = JSON.patch(state, json, ~s({"a":10,"c":3}))
+# Result: {"a":10,"b":2,"c":3}
+
+# Use null to remove keys
+{:ok, result} = JSON.patch(state, json, ~s({"b":null}))
+# Result: {"a":1}
 ```
+
+**When to use each function:**
+- **SET/REPLACE/INSERT**: For path-based updates using JSON paths (e.g., "$.user.name")
+- **PATCH**: For bulk top-level key updates (implements RFC 7396 JSON Merge Patch)
 
 #### Performance Notes
 

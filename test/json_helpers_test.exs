@@ -66,7 +66,9 @@ defmodule EctoLibSql.JSONHelpersTest do
       {:ok, result} = JSON.extract(state, json, "$.items")
       # Arrays are returned as JSON text
       assert is_binary(result)
-      assert String.contains?(result, ["1", "2", "3"])
+      # Parse the JSON array to verify exact content
+      {:ok, decoded} = Jason.decode(result)
+      assert decoded == [1, 2, 3]
     end
   end
 
@@ -180,9 +182,11 @@ defmodule EctoLibSql.JSONHelpersTest do
 
     test "arrays with strings containing special chars", %{state: state} do
       {:ok, json} = JSON.array(state, ["hello \"world\"", "tab\there"])
-      # Should be escaped properly - look for the escaped version
-      assert String.contains?(json, "hello")
-      assert String.contains?(json, "world")
+      # Parse and validate the structure with proper escape sequences
+      {:ok, decoded} = Jason.decode(json)
+      assert length(decoded) == 2
+      assert Enum.at(decoded, 0) == "hello \"world\""
+      assert Enum.at(decoded, 1) == "tab\there"
     end
   end
 
@@ -430,10 +434,10 @@ defmodule EctoLibSql.JSONHelpersTest do
       values = Enum.to_list(1..100)
       {:ok, json} = JSON.array(state, values)
       assert is_binary(json)
-      # Should contain all values
-      Enum.each(values, fn v ->
-        assert String.contains?(json, Integer.to_string(v))
-      end)
+      # Parse and verify exact array content
+      {:ok, decoded} = Jason.decode(json)
+      assert decoded == values
+      assert length(decoded) == 100
     end
 
     test "handles JSON with reserved characters", %{state: state} do
@@ -552,8 +556,9 @@ defmodule EctoLibSql.JSONHelpersTest do
 
     test "removes single index from array", %{state: state} do
       {:ok, result} = JSON.remove(state, ~s([1,2,3,4,5]), "$[2]")
-      # Should remove the 3 (index 2)
-      assert String.contains?(result, "[1,2,4,5]")
+      # Should remove the 3 (index 2), resulting in [1,2,4,5]
+      {:ok, decoded} = Jason.decode(result)
+      assert decoded == [1, 2, 4, 5]
     end
 
     test "removes multiple paths from object", %{state: state} do
