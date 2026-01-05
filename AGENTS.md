@@ -1398,6 +1398,52 @@ from u in User,
   update: [set: [settings: fragment("json_set(?, ?, ?)", u.settings, "$.theme", "light")]]
 ```
 
+#### JSON Modification Functions
+
+Create, update, and manipulate JSON structures:
+
+```elixir
+# Quote a value for JSON
+{:ok, quoted} = JSON.quote(state, "hello \"world\"")
+# Returns: {:ok, "\"hello \\\"world\\\"\""}
+
+# Get JSON array/object length (SQLite 3.9.0+)
+{:ok, len} = JSON.length(state, ~s([1,2,3,4,5]))
+# Returns: {:ok, 5}
+
+# Get JSON structure depth (SQLite 3.9.0+)
+{:ok, depth} = JSON.depth(state, ~s({"a":{"b":{"c":1}}}))
+# Returns: {:ok, 4}
+
+# Set a value (creates path if not exists)
+{:ok, json} = JSON.set(state, ~s({"a":1}), "$.b", 2)
+# Returns: {:ok, "{\"a\":1,\"b\":2}"}
+
+# Replace a value (only if path exists)
+{:ok, json} = JSON.replace(state, ~s({"a":1,"b":2}), "$.a", 10)
+# Returns: {:ok, "{\"a\":10,\"b\":2}"}
+
+# Insert without replacing
+{:ok, json} = JSON.insert(state, ~s({"a":1}), "$.b", 2)
+# Returns: {:ok, "{\"a\":1,\"b\":2}"}
+
+# Remove keys/paths
+{:ok, json} = JSON.remove(state, ~s({"a":1,"b":2,"c":3}), "$.b")
+# Returns: {:ok, "{\"a\":1,\"c\":3}"}
+
+# Remove multiple paths
+{:ok, json} = JSON.remove(state, ~s({"a":1,"b":2,"c":3}), ["$.a", "$.c"])
+# Returns: {:ok, "{\"b\":2}"}
+
+# Apply a JSON patch
+{:ok, json} = JSON.patch(state, ~s({"a":1,"b":2}), ~s({"a":10,"c":3}))
+# Returns: {:ok, "{\"a\":10,\"b\":2,\"c\":3}"}
+
+# Get all keys from a JSON object (SQLite 3.9.0+)
+{:ok, keys} = JSON.keys(state, ~s({"name":"Alice","age":30}))
+# Returns: {:ok, "[\"age\",\"name\"]"}  (sorted)
+```
+
 #### Real-World Example: Settings Management
 
 ```elixir
@@ -1412,40 +1458,110 @@ defmodule MyApp.UserPreferences do
     # Build JSON path from key path
     json_path = "$.#{key_path}"
     
-    # Use SQL to update
-    EctoLibSql.handle_execute(
-      "SELECT json_set(?, ?, ?)",
-      [settings_json, json_path, value],
-      [],
-      state
-    )
+    # Use JSON.set instead of raw SQL
+    JSON.set(state, settings_json, json_path, value)
+  end
+
+  def update_theme(state, settings_json, theme) do
+    JSON.set(state, settings_json, "$.theme", theme)
+  end
+
+  def toggle_notifications(state, settings_json) do
+    # Get current value
+    {:ok, current} = JSON.extract(state, settings_json, "$.notifications")
+    new_value = not current
+    
+    # Update it
+    JSON.set(state, settings_json, "$.notifications", new_value)
+  end
+
+  def remove_preference(state, settings_json, key_path) do
+    json_path = "$.#{key_path}"
+    JSON.remove(state, settings_json, json_path)
   end
 
   def validate_settings(state, settings_json) do
     JSON.is_valid(state, settings_json)
   end
 
-  def merge_settings(state, base_settings, overrides) do
-    # Create object and merge using json_object
-    {:ok, merged} = JSON.object(state, 
-      Map.to_list(Map.merge(
-        Jason.decode!(base_settings),
-        Jason.decode!(overrides)
-      )) |> List.flatten()
-    )
-    {:ok, merged}
+  def get_structure_info(state, settings_json) do
+    with {:ok, is_valid} <- JSON.is_valid(state, settings_json),
+         {:ok, json_type} <- JSON.type(state, settings_json),
+         {:ok, depth} <- JSON.depth(state, settings_json) do
+      {:ok, %{valid: is_valid, type: json_type, depth: depth}}
+    end
+  end
+
+  # Build settings from scratch
+  def create_default_settings(state) do
+    JSON.object(state, [
+      "theme", "light",
+      "notifications", true,
+      "language", "en",
+      "timezone", "UTC"
+    ])
+  end
+
+  # Merge settings with defaults
+  def merge_with_defaults(state, user_settings, defaults) do
+    with {:ok, user_map} <- JSON.tree(state, user_settings),
+         {:ok, defaults_map} <- JSON.tree(state, defaults) do
+      # In practice, you'd merge these maps here
+      {:ok, user_settings}
+    end
   end
 end
 
 # Usage
 {:ok, state} = EctoLibSql.connect(database: "app.db")
-settings = ~s({"theme":"dark","notifications":true})
+settings = ~s({"theme":"dark","notifications":true,"language":"es"})
 
+# Get a preference
 {:ok, theme} = MyApp.UserPreferences.get_preference(state, settings, "theme")
 # Returns: {:ok, "dark"}
 
+# Update a preference
+{:ok, new_settings} = MyApp.UserPreferences.update_theme(state, settings, "light")
+
+# Toggle notifications
+{:ok, new_settings} = MyApp.UserPreferences.toggle_notifications(state, settings)
+
+# Validate settings
 {:ok, valid?} = MyApp.UserPreferences.validate_settings(state, settings)
 # Returns: {:ok, true}
+
+# Get structure info
+{:ok, info} = MyApp.UserPreferences.get_structure_info(state, settings)
+# Returns: {:ok, %{valid: true, type: "object", depth: 2}}
+```
+
+#### Comparison: Set vs Replace vs Insert
+
+The three modification functions have different behaviors:
+
+```elixir
+json = ~s({"a":1,"b":2})
+
+# SET: Creates or replaces any path
+{:ok, result} = JSON.set(state, json, "$.c", 3)
+# Result: {"a":1,"b":2,"c":3}
+
+{:ok, result} = JSON.set(state, json, "$.a", 100)
+# Result: {"a":100,"b":2}
+
+# REPLACE: Only updates existing paths, ignores new paths
+{:ok, result} = JSON.replace(state, json, "$.c", 3)
+# Result: {"a":1,"b":2}  (c not added)
+
+{:ok, result} = JSON.replace(state, json, "$.a", 100)
+# Result: {"a":100,"b":2}  (existing path updated)
+
+# INSERT: Adds new values without replacing existing ones
+{:ok, result} = JSON.insert(state, json, "$.c", 3)
+# Result: {"a":1,"b":2,"c":3}
+
+{:ok, result} = JSON.insert(state, json, "$.a", 100)
+# Result: {"a":1,"b":2}  (existing path unchanged)
 ```
 
 #### Performance Notes
