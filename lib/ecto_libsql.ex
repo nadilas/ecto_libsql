@@ -152,11 +152,43 @@ defmodule EctoLibSql do
         query when is_binary(query) -> %EctoLibSql.Query{statement: query}
       end
 
-    if trx_id do
-      EctoLibSql.Native.execute_with_trx(state, query_struct, args)
-    else
-      EctoLibSql.Native.execute_non_trx(query_struct, state, args)
+    # Check if query returns rows (SELECT, EXPLAIN, WITH, RETURNING clauses)
+    # If so, route through query path instead of execute path
+    sql = query_struct.statement
+    
+    case EctoLibSql.Native.should_use_query_path(sql) do
+      true ->
+        # Query returns rows, use the query path
+        if trx_id do
+          EctoLibSql.Native.query_with_trx_args(trx_id, state.conn_id, sql, args)
+          |> format_query_result(state)
+        else
+          EctoLibSql.Native.query_args(state.conn_id, state.mode, state.sync, sql, args)
+          |> format_query_result(state)
+        end
+      
+      false ->
+        # Query doesn't return rows, use the execute path (INSERT/UPDATE/DELETE)
+        if trx_id do
+          EctoLibSql.Native.execute_with_trx(state, query_struct, args)
+        else
+          EctoLibSql.Native.execute_non_trx(query_struct, state, args)
+        end
     end
+  end
+
+  # Helper to format raw query results for return
+  defp format_query_result(%{"columns" => columns, "rows" => rows, "num_rows" => num_rows}, state) do
+    result = %EctoLibSql.Result{
+      columns: columns,
+      rows: rows,
+      num_rows: num_rows
+    }
+    {:ok, %EctoLibSql.Query{}, result, state}
+  end
+
+  defp format_query_result({:error, reason}, state) do
+    {:error, %EctoLibSql.Query{}, reason, state}
   end
 
   @impl true

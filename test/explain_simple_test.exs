@@ -31,7 +31,11 @@ defmodule EctoLibSql.ExplainSimpleTest do
         _, _ -> nil
       end
 
-      GenServer.stop(TestRepo)
+      try do
+        GenServer.stop(TestRepo)
+      catch
+        _, _ -> nil
+      end
     end)
 
     {:ok, []}
@@ -44,8 +48,10 @@ defmodule EctoLibSql.ExplainSimpleTest do
 
     assert is_struct(result, EctoLibSql.Result)
     assert is_list(result.rows)
-    # EXPLAIN QUERY PLAN returns rows with columns: addr, opcode, p1, p2, p3, p4, p5, comment
-    assert length(result.columns) >= 8
+    # EXPLAIN QUERY PLAN returns rows with columns: id, parent, notused, detail
+    assert length(result.columns) == 4
+    assert result.columns == ["id", "parent", "notused", "detail"]
+    assert length(result.rows) > 0
   end
 
   test "EXPLAIN via explain API returns rows" do
@@ -67,8 +73,9 @@ defmodule EctoLibSql.ExplainSimpleTest do
     # The result should be a list of maps
     result = Ecto.Adapters.SQL.explain(TestRepo, :all, query)
 
+    IO.inspect(result, label: "EXPLAIN result")
     # Check it's a list of results
     assert is_list(result)
-    IO.inspect(result, label: "EXPLAIN result")
+    assert length(result) > 0
   end
 end
