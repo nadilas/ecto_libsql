@@ -230,21 +230,29 @@ defmodule EctoLibSql do
 
     # Convert map values to list in parameter order.
     Enum.map(param_names, fn name ->
-      # Try atom key first, then string key.
-      case Map.fetch(args, name) do
-        {:ok, value} -> value
-        :error -> Map.get(args, to_string(name))
-      end
+      get_param_value(args, name)
     end)
   end
 
+  # Get a parameter value from a map, supporting both atom and string keys.
+  # Uses String.to_existing_atom/1 to avoid atom table exhaustion from dynamic SQL.
+  defp get_param_value(map, name) when is_binary(name) do
+    # Try existing atom key first (common case), then string key.
+    atom_key = String.to_existing_atom(name)
+    Map.get(map, atom_key, Map.get(map, name))
+  rescue
+    ArgumentError ->
+      # Atom doesn't exist, try string key only.
+      Map.get(map, name)
+  end
+
   # Extract named parameter names from SQL in order of appearance.
-  # Returns a list of atom keys (e.g., [:name, :age] for "WHERE name = :name AND age = :age").
+  # Returns a list of strings to avoid atom table exhaustion from dynamic SQL.
   defp extract_named_params(sql) do
     # Match :name, $name, or @name patterns.
     ~r/[:$@]([a-zA-Z_][a-zA-Z0-9_]*)/
     |> Regex.scan(sql)
-    |> Enum.map(fn [_full, name] -> String.to_atom(name) end)
+    |> Enum.map(fn [_full, name] -> name end)
   end
 
   @impl true
