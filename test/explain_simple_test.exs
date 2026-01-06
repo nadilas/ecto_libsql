@@ -5,10 +5,21 @@ defmodule EctoLibSql.ExplainSimpleTest do
 
   use ExUnit.Case, async: false
 
+  import Ecto.Query
+
   defmodule TestRepo do
     use Ecto.Repo,
       otp_app: :ecto_libsql,
       adapter: Ecto.Adapters.LibSql
+  end
+
+  defmodule User do
+    use Ecto.Schema
+
+    schema "explain_test_users" do
+      field(:name, :string)
+      field(:email, :string)
+    end
   end
 
   @test_db "z_ecto_libsql_test-explain-simple.db"
@@ -55,25 +66,13 @@ defmodule EctoLibSql.ExplainSimpleTest do
   end
 
   test "EXPLAIN via explain API returns rows" do
-    # Import Ecto.Query
-    import Ecto.Query
-
-    defmodule User do
-      use Ecto.Schema
-
-      schema "explain_test_users" do
-        field(:name, :string)
-        field(:email, :string)
-      end
-    end
-
-    # Build a simple query
+    # Build a simple query.
     query = from(u in User, select: u.name)
 
-    # The result should be a list of maps
+    # The result should be a list of maps.
     result = Ecto.Adapters.SQL.explain(TestRepo, :all, query)
 
-    # Check it's a list of results
+    # Check it's a list of results.
     assert is_list(result)
     assert length(result) > 0
   end
