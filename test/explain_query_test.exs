@@ -104,9 +104,18 @@ defmodule EctoLibSql.ExplainQueryTest do
     )
 
     on_exit(fn ->
-      Ecto.Adapters.SQL.query!(TestRepo, "DROP TABLE IF EXISTS explain_posts")
-      Ecto.Adapters.SQL.query!(TestRepo, "DROP TABLE IF EXISTS explain_users")
-      GenServer.stop(TestRepo)
+      try do
+        Ecto.Adapters.SQL.query!(TestRepo, "DROP TABLE IF EXISTS explain_posts")
+        Ecto.Adapters.SQL.query!(TestRepo, "DROP TABLE IF EXISTS explain_users")
+      catch
+        _, _ -> nil
+      end
+
+      try do
+        GenServer.stop(TestRepo)
+      catch
+        _, _ -> nil
+      end
     end)
 
     {:ok, []}
@@ -205,13 +214,20 @@ defmodule EctoLibSql.ExplainQueryTest do
       assert is_list(result_with_txn)
 
       # Without transaction
+      # Note: Ecto.Adapters.SQL.explain with wrap_in_transaction: false returns {:ok, list}
+      # instead of just list. This appears to be a quirk in ecto_sql where the unwrapping
+      # only happens in the Multi transaction path. See:
+      # https://github.com/elixir-ecto/ecto_sql/blob/main/lib/ecto/adapters/sql.ex#L540
       result_without_txn =
         Ecto.Adapters.SQL.explain(TestRepo, :all, query, wrap_in_transaction: false)
 
-      assert is_list(result_without_txn)
-
-      # Results should be the same
-      assert result_with_txn == result_without_txn
+      assert match?({:ok, list} when is_list(list), result_without_txn)
+      
+      # Extract the list from the tuple for comparison
+      {:ok, list_without_txn} = result_without_txn
+      
+      # Results should be the same (ignoring the wrapping difference)
+      assert result_with_txn == list_without_txn
     end
   end
 
