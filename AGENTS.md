@@ -1288,6 +1288,317 @@ end
 {:ok, state} = EctoLibSql.connect(MyApp.DatabaseConfig.connection_opts())
 ```
 
+### JSON Schema Helpers
+
+EctoLibSql provides `EctoLibSql.JSON` module with comprehensive helpers for working with JSON and JSONB data. LibSQL 3.45.1 has JSON1 built into the core with support for both text JSON and efficient JSONB binary format.
+
+#### JSON Functions
+
+```elixir
+alias EctoLibSql.JSON
+
+# Extract values from JSON
+{:ok, theme} = JSON.extract(state, ~s({"user":{"prefs":{"theme":"dark"}}}), "$.user.prefs.theme")
+# Returns: {:ok, "dark"}
+
+# Check JSON type
+{:ok, type} = JSON.type(state, ~s({"count":42}), "$.count")
+# Returns: {:ok, "integer"}
+
+# Validate JSON
+{:ok, true} = JSON.is_valid(state, ~s({"valid":true}))
+{:ok, false} = JSON.is_valid(state, "not json")
+
+# Create JSON structures
+{:ok, array} = JSON.array(state, [1, 2.5, "hello", nil])
+# Returns: {:ok, "[1,2.5,\"hello\",null]"}
+
+{:ok, obj} = JSON.object(state, ["name", "Alice", "age", 30, "active", true])
+# Returns: {:ok, "{\"name\":\"Alice\",\"age\":30,\"active\":true}"}
+```
+
+#### Iterating Over JSON
+
+```elixir
+# Iterate over array elements or object members
+{:ok, items} = JSON.each(state, ~s([1,2,3]), "$")
+# Returns: {:ok, [{0, 1, "integer"}, {1, 2, "integer"}, {2, 3, "integer"}]}
+
+# Recursively iterate all values (flattening)
+{:ok, tree} = JSON.tree(state, ~s({"a":{"b":1},"c":[2,3]}), "$")
+# Returns: all nested values with their full paths
+```
+
+#### JSONB Binary Format
+
+JSONB is a more efficient binary encoding of JSON with 5-10% smaller size and faster processing:
+
+```elixir
+# Convert to binary JSONB format
+json_string = ~s({"name":"Alice","age":30})
+{:ok, jsonb_binary} = JSON.convert(state, json_string, :jsonb)
+
+# All JSON functions work with both text and JSONB
+{:ok, value} = JSON.extract(state, jsonb_binary, "$.name")
+# Transparently works with binary format
+
+# Convert back to text JSON
+{:ok, canonical} = JSON.convert(state, json_string, :json)
+```
+
+#### Arrow Operators (-> and ->>)
+
+The `->` and `->>` operators provide concise syntax for JSON access in queries:
+
+```elixir
+# -> returns JSON (always)
+fragment = JSON.arrow_fragment("settings", "theme")
+# Returns: "settings -> 'theme'"
+
+# ->> returns SQL type (text/int/real/null)
+fragment = JSON.arrow_fragment("settings", "theme", :double_arrow)
+# Returns: "settings ->> 'theme'"
+
+# Use in Ecto queries - Option 1: Using the helper function
+arrow_sql = JSON.arrow_fragment("data", "active", :double_arrow)
+from u in User,
+  where: fragment(arrow_sql <> " = ?", true)
+
+# Option 2: Direct inline SQL (simpler approach)
+from u in User,
+  where: fragment("data ->> 'active' = ?", true)
+```
+
+#### Ecto Integration
+
+JSON helpers work seamlessly with Ecto:
+
+```elixir
+defmodule MyApp.User do
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  schema "users" do
+    field :name, :string
+    field :settings, :map  # Stored as JSON/JSONB
+    timestamps()
+  end
+end
+
+# In your repository context
+import Ecto.Query
+
+# Query with JSON extraction
+from u in User,
+  where: fragment("json_extract(?, ?) = ?", u.settings, "$.theme", "dark"),
+  select: u.name
+
+# Or using the helpers - Option 1: Arrow fragment helper
+arrow_sql = JSON.arrow_fragment("settings", "theme", :double_arrow)
+from u in User,
+  where: fragment(arrow_sql <> " = ?", "dark")
+
+# Option 2: Direct inline SQL (simpler for static fields)
+from u in User,
+  where: fragment("settings ->> 'theme' = ?", "dark")
+
+# Update JSON fields
+from u in User,
+  where: u.id == ^user_id,
+  update: [set: [settings: fragment("json_set(?, ?, ?)", u.settings, "$.theme", "light")]]
+```
+
+#### JSON Modification Functions
+
+Create, update, and manipulate JSON structures:
+
+```elixir
+# Quote a value for JSON
+{:ok, quoted} = JSON.json_quote(state, "hello \"world\"")
+# Returns: {:ok, "\"hello \\\"world\\\"\""}
+
+# Get JSON array/object length (SQLite 3.9.0+)
+{:ok, len} = JSON.json_length(state, ~s([1,2,3,4,5]))
+# Returns: {:ok, 5}
+
+# Get JSON structure depth (SQLite 3.9.0+)
+{:ok, depth} = JSON.depth(state, ~s({"a":{"b":{"c":1}}}))
+# Returns: {:ok, 4}
+
+# Set a value (creates path if not exists)
+{:ok, json} = JSON.set(state, ~s({"a":1}), "$.b", 2)
+# Returns: {:ok, "{\"a\":1,\"b\":2}"}
+
+# Replace a value (only if path exists)
+{:ok, json} = JSON.replace(state, ~s({"a":1,"b":2}), "$.a", 10)
+# Returns: {:ok, "{\"a\":10,\"b\":2}"}
+
+# Insert without replacing
+{:ok, json} = JSON.insert(state, ~s({"a":1}), "$.b", 2)
+# Returns: {:ok, "{\"a\":1,\"b\":2}"}
+
+# Remove keys/paths
+{:ok, json} = JSON.remove(state, ~s({"a":1,"b":2,"c":3}), "$.b")
+# Returns: {:ok, "{\"a\":1,\"c\":3}"}
+
+# Remove multiple paths
+{:ok, json} = JSON.remove(state, ~s({"a":1,"b":2,"c":3}), ["$.a", "$.c"])
+# Returns: {:ok, "{\"b\":2}"}
+
+# Apply a JSON Merge Patch (RFC 7396)
+# Keys in patch are object keys, not JSON paths
+{:ok, json} = JSON.patch(state, ~s({"a":1,"b":2}), ~s({"a":10,"c":3}))
+# Returns: {:ok, "{\"a\":10,\"b\":2,\"c\":3}"}
+
+# Remove a key by patching with null
+{:ok, json} = JSON.patch(state, ~s({"a":1,"b":2,"c":3}), ~s({"b":null}))
+# Returns: {:ok, "{\"a\":1,\"c\":3}"}
+
+# Get all keys from a JSON object (SQLite 3.9.0+)
+{:ok, keys} = JSON.keys(state, ~s({"name":"Alice","age":30}))
+# Returns: {:ok, "[\"age\",\"name\"]"}  (sorted)
+```
+
+#### Real-World Example: Settings Management
+
+```elixir
+defmodule MyApp.UserPreferences do
+  alias EctoLibSql.JSON
+
+  def get_preference(state, settings_json, key_path) do
+    JSON.extract(state, settings_json, "$.#{key_path}")
+  end
+
+  def set_preference(state, settings_json, key_path, value) do
+    # Build JSON path from key path
+    json_path = "$.#{key_path}"
+    
+    # Use JSON.set instead of raw SQL
+    JSON.set(state, settings_json, json_path, value)
+  end
+
+  def update_theme(state, settings_json, theme) do
+    JSON.set(state, settings_json, "$.theme", theme)
+  end
+
+  def toggle_notifications(state, settings_json) do
+    # Get current value
+    {:ok, current} = JSON.extract(state, settings_json, "$.notifications")
+    new_value = not current
+    
+    # Update it
+    JSON.set(state, settings_json, "$.notifications", new_value)
+  end
+
+  def remove_preference(state, settings_json, key_path) do
+    json_path = "$.#{key_path}"
+    JSON.remove(state, settings_json, json_path)
+  end
+
+  def validate_settings(state, settings_json) do
+    JSON.is_valid(state, settings_json)
+  end
+
+  def get_structure_info(state, settings_json) do
+    with {:ok, is_valid} <- JSON.is_valid(state, settings_json),
+         {:ok, json_type} <- JSON.type(state, settings_json),
+         {:ok, depth} <- JSON.depth(state, settings_json) do
+      {:ok, %{valid: is_valid, type: json_type, depth: depth}}
+    end
+  end
+
+  # Build settings from scratch
+  def create_default_settings(state) do
+    JSON.object(state, [
+      "theme", "light",
+      "notifications", true,
+      "language", "en",
+      "timezone", "UTC"
+    ])
+  end
+
+  # Merge settings with defaults
+  def merge_with_defaults(state, user_settings, defaults) do
+    with {:ok, user_map} <- JSON.tree(state, user_settings),
+         {:ok, defaults_map} <- JSON.tree(state, defaults) do
+      # In practice, you'd merge these maps here
+      {:ok, user_settings}
+    end
+  end
+end
+
+# Usage
+{:ok, state} = EctoLibSql.connect(database: "app.db")
+settings = ~s({"theme":"dark","notifications":true,"language":"es"})
+
+# Get a preference
+{:ok, theme} = MyApp.UserPreferences.get_preference(state, settings, "theme")
+# Returns: {:ok, "dark"}
+
+# Update a preference
+{:ok, new_settings} = MyApp.UserPreferences.update_theme(state, settings, "light")
+
+# Toggle notifications
+{:ok, new_settings} = MyApp.UserPreferences.toggle_notifications(state, settings)
+
+# Validate settings
+{:ok, valid?} = MyApp.UserPreferences.validate_settings(state, settings)
+# Returns: {:ok, true}
+
+# Get structure info
+{:ok, info} = MyApp.UserPreferences.get_structure_info(state, settings)
+# Returns: {:ok, %{valid: true, type: "object", depth: 2}}
+```
+
+#### Comparison: Set vs Replace vs Insert vs Patch
+
+The modification functions have different behaviors:
+
+```elixir
+json = ~s({"a":1,"b":2})
+
+# SET: Creates or replaces any path (uses JSON paths like "$.key")
+{:ok, result} = JSON.set(state, json, "$.c", 3)
+# Result: {"a":1,"b":2,"c":3}
+
+{:ok, result} = JSON.set(state, json, "$.a", 100)
+# Result: {"a":100,"b":2}
+
+# REPLACE: Only updates existing paths, ignores new paths (uses JSON paths)
+{:ok, result} = JSON.replace(state, json, "$.c", 3)
+# Result: {"a":1,"b":2}  (c not added)
+
+{:ok, result} = JSON.replace(state, json, "$.a", 100)
+# Result: {"a":100,"b":2}  (existing path updated)
+
+# INSERT: Adds new values without replacing existing ones (uses JSON paths)
+{:ok, result} = JSON.insert(state, json, "$.c", 3)
+# Result: {"a":1,"b":2,"c":3}
+
+{:ok, result} = JSON.insert(state, json, "$.a", 100)
+# Result: {"a":1,"b":2}  (existing path unchanged)
+
+# PATCH: Applies JSON Merge Patch (RFC 7396) - keys are object keys, not paths
+{:ok, result} = JSON.patch(state, json, ~s({"a":10,"c":3}))
+# Result: {"a":10,"b":2,"c":3}
+
+# Use null to remove keys
+{:ok, result} = JSON.patch(state, json, ~s({"b":null}))
+# Result: {"a":1}
+```
+
+**When to use each function:**
+- **SET/REPLACE/INSERT**: For path-based updates using JSON paths (e.g., "$.user.name")
+- **PATCH**: For bulk top-level key updates (implements RFC 7396 JSON Merge Patch)
+
+#### Performance Notes
+
+- JSONB format reduces storage by 5-10% vs text JSON
+- JSONB processes in less than half the CPU cycles
+- All JSON functions accept both text and JSONB transparently
+- For frequent extractions, consider denormalising commonly accessed fields
+- Use `json_each()` and `json_tree()` for flattening/searching
+
 ---
 
 ## Ecto Integration
@@ -2460,6 +2771,106 @@ Generates SQL for cosine distance calculation.
 - `vector` (list | String.t()): Query vector
 
 **Returns:** String SQL expression
+
+### JSON Helper Functions (EctoLibSql.JSON)
+
+The `EctoLibSql.JSON` module provides helpers for working with JSON and JSONB data in libSQL 3.45.1+.
+
+#### `EctoLibSql.JSON.extract/3`
+
+Extract a value from JSON at the specified path.
+
+**Parameters:**
+- `state` (EctoLibSql.State): Connection state
+- `json` (String.t() | binary): JSON text or JSONB binary data
+- `path` (String.t()): JSON path expression (e.g., "$.key" or "$[0]")
+
+**Returns:** `{:ok, value}` or `{:error, reason}`
+
+#### `EctoLibSql.JSON.type/2` and `EctoLibSql.JSON.type/3`
+
+Get the type of a value in JSON at the specified path.
+
+**Parameters:**
+- `state` (EctoLibSql.State): Connection state
+- `json` (String.t() | binary): JSON text or JSONB binary data
+- `path` (String.t(), optional, default "$"): JSON path expression
+
+**Returns:** `{:ok, type}` where type is one of: null, true, false, integer, real, text, array, object
+
+#### `EctoLibSql.JSON.is_valid/2`
+
+Check if a string is valid JSON.
+
+**Parameters:**
+- `state` (EctoLibSql.State): Connection state
+- `json` (String.t()): String to validate as JSON
+
+**Returns:** `{:ok, boolean}` or `{:error, reason}`
+
+#### `EctoLibSql.JSON.array/2`
+
+Create a JSON array from a list of values.
+
+**Parameters:**
+- `state` (EctoLibSql.State): Connection state
+- `values` (list): List of values to include in the array
+
+**Returns:** `{:ok, json_array}` - JSON text representation of the array
+
+#### `EctoLibSql.JSON.object/2`
+
+Create a JSON object from a list of key-value pairs.
+
+**Parameters:**
+- `state` (EctoLibSql.State): Connection state
+- `pairs` (list): List of alternating [key1, value1, key2, value2, ...]
+
+**Returns:** `{:ok, json_object}` - JSON text representation of the object
+
+#### `EctoLibSql.JSON.each/2` and `EctoLibSql.JSON.each/3`
+
+Iterate over elements of a JSON array or object members.
+
+**Parameters:**
+- `state` (EctoLibSql.State): Connection state
+- `json` (String.t() | binary): JSON text or JSONB binary data
+- `path` (String.t(), optional, default "$"): JSON path expression
+
+**Returns:** `{:ok, [{key, value, type}]}` - List of members with metadata
+
+#### `EctoLibSql.JSON.tree/2` and `EctoLibSql.JSON.tree/3`
+
+Recursively iterate over all values in a JSON structure.
+
+**Parameters:**
+- `state` (EctoLibSql.State): Connection state
+- `json` (String.t() | binary): JSON text or JSONB binary data
+- `path` (String.t(), optional, default "$"): JSON path expression
+
+**Returns:** `{:ok, [{full_key, atom, type}]}` - List of all values with paths
+
+#### `EctoLibSql.JSON.convert/2` and `EctoLibSql.JSON.convert/3`
+
+Convert text JSON to canonical form, optionally returning JSONB binary format.
+
+**Parameters:**
+- `state` (EctoLibSql.State): Connection state
+- `json` (String.t()): JSON text string
+- `format` (`:json | :jsonb`, optional, default `:json`): Output format
+
+**Returns:** `{:ok, json}` as text or `{:ok, jsonb}` as binary, or `{:error, reason}`
+
+#### `EctoLibSql.JSON.arrow_fragment/2` and `EctoLibSql.JSON.arrow_fragment/3`
+
+Helper to create SQL fragments for Ecto queries using JSON operators.
+
+**Parameters:**
+- `json_column` (String.t()): Column name or fragment
+- `path` (String.t() | integer): JSON path (string key or array index)
+- `operator` (`:arrow | :double_arrow`, optional, default `:arrow`): Operator type
+
+**Returns:** String for use in `Ecto.Query.fragment/1`
 
 ### Sync Functions
 
