@@ -222,10 +222,10 @@ defmodule EctoLibSql.ExplainQueryTest do
         Ecto.Adapters.SQL.explain(TestRepo, :all, query, wrap_in_transaction: false)
 
       assert match?({:ok, list} when is_list(list), result_without_txn)
-      
+
       # Extract the list from the tuple for comparison
       {:ok, list_without_txn} = result_without_txn
-      
+
       # Results should be the same (ignoring the wrapping difference)
       assert result_with_txn == list_without_txn
     end
