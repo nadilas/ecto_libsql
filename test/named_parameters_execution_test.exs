@@ -478,17 +478,33 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
 
   describe "Edge cases and error handling" do
     test "Missing named parameter raises clear error", %{state: state} do
-      # Try to execute with missing parameter
-      result =
-        EctoLibSql.handle_execute(
-          "INSERT INTO users (id, name, email, age) VALUES (:id, :name, :email, :age)",
-          %{id: 1, name: "Jack"},
-          [],
-          state
-        )
+      # Try to execute with missing parameters.
+      # Should raise ArgumentError with clear message about which parameters are missing.
+      assert_raise ArgumentError,
+                   ~r/Missing required parameters: :email, :age/,
+                   fn ->
+                     EctoLibSql.handle_execute(
+                       "INSERT INTO users (id, name, email, age) VALUES (:id, :name, :email, :age)",
+                       %{id: 1, name: "Jack"},
+                       [],
+                       state
+                     )
+                   end
+    end
 
-      # Should fail because :email and :age are missing
-      assert match?({:error, _, _}, result)
+    test "Missing parameter for nullable column still raises error", %{state: state} do
+      # Even though 'age' is nullable, we should still raise an error if the parameter is missing.
+      # This prevents silent NULL insertions when a parameter is accidentally omitted.
+      assert_raise ArgumentError,
+                   ~r/Missing required parameters: :age/,
+                   fn ->
+                     EctoLibSql.handle_execute(
+                       "INSERT INTO users (id, name, email, age) VALUES (:id, :name, :email, :age)",
+                       %{id: 1, name: "Jack", email: "jack@example.com"},
+                       [],
+                       state
+                     )
+                   end
     end
 
     test "Extra parameters in map are ignored", %{state: state} do
@@ -552,17 +568,17 @@ defmodule EctoLibSql.NamedParametersExecutionTest do
         )
 
       # Query using :Name (uppercase N) in SQL but provide :name (lowercase) in params.
-      # The parameter should NOT match due to case sensitivity.
-      {:ok, _, result, _} =
-        EctoLibSql.handle_execute(
-          "SELECT * FROM users WHERE name = :Name",
-          %{name: "Mike"},
-          [],
-          state
-        )
-
-      # Should find no rows because :Name != :name.
-      assert result.num_rows == 0
+      # Should raise error because parameter cases don't match.
+      assert_raise ArgumentError,
+                   ~r/Missing required parameters: :Name/,
+                   fn ->
+                     EctoLibSql.handle_execute(
+                       "SELECT * FROM users WHERE name = :Name",
+                       %{name: "Mike"},
+                       [],
+                       state
+                     )
+                   end
 
       # Now use matching case - should work.
       {:ok, _, result, _} =

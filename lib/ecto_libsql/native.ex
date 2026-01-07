@@ -377,6 +377,21 @@ defmodule EctoLibSql.Native do
   end
 
   @doc false
+  # Check if a map has a key, supporting both atom and string keys.
+  # This avoids creating atoms at runtime while allowing users to pass
+  # either %{name: value} or %{"name" => value}.
+  defp has_map_key_flexible?(_map, nil), do: false
+
+  defp has_map_key_flexible?(map, name) when is_binary(name) do
+    # Try atom key first (more common), then string key.
+    atom_key = String.to_existing_atom(name)
+    Map.has_key?(map, atom_key) or Map.has_key?(map, name)
+  rescue
+    ArgumentError ->
+      # Atom doesn't exist, check string key only.
+      Map.has_key?(map, name)
+  end
+
   # Get a value from a map, supporting both atom and string keys.
   # This avoids creating atoms at runtime while allowing users to pass
   # either %{name: value} or %{"name" => value}.
@@ -390,6 +405,26 @@ defmodule EctoLibSql.Native do
     ArgumentError ->
       # Atom doesn't exist, try string key only.
       Map.get(map, name, nil)
+  end
+
+  # Validate that all required parameters exist in the map.
+  # Raises ArgumentError if any parameters are missing.
+  defp validate_params_exist(param_map, param_names) do
+    missing_params =
+      Enum.filter(param_names, fn name ->
+        not has_map_key_flexible?(param_map, name)
+      end)
+
+    if missing_params != [] do
+      missing_list = Enum.map_join(missing_params, ", ", &":#{&1}")
+      all_params = Enum.map_join(param_names, ", ", &":#{&1}")
+
+      raise ArgumentError,
+            "Missing required parameters: #{missing_list}. " <>
+              "SQL requires: #{all_params}"
+    end
+
+    :ok
   end
 
   # ETS-based LRU cache for parameter metadata.
@@ -530,7 +565,10 @@ defmodule EctoLibSql.Native do
         introspect_and_cache_params(conn_id, statement, param_map)
 
       param_names ->
-        # Cache hit - convert map to positional list using cached order.
+        # Cache hit - validate parameters exist before conversion (raises on missing params).
+        validate_params_exist(param_map, param_names)
+
+        # Convert map to positional list using cached order.
         # Support both atom and string keys in the input map.
         Enum.map(param_names, fn name ->
           get_map_value_flexible(param_map, name)
@@ -562,6 +600,9 @@ defmodule EctoLibSql.Native do
 
             # Cache the parameter names for future calls.
             cache_param_names(statement, param_names)
+
+            # Validate that all required parameters exist in the map (raises on missing params).
+            validate_params_exist(param_map, param_names)
 
             # Convert map to positional list using the names.
             # Support both atom and string keys in the input map.

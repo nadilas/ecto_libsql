@@ -152,16 +152,16 @@ defmodule EctoLibSql do
         query when is_binary(query) -> %EctoLibSql.Query{statement: query}
       end
 
-    # Check if query returns rows (SELECT, EXPLAIN, WITH, RETURNING clauses)
-    # If so, route through query path instead of execute path
+    # Check if query returns rows (SELECT, EXPLAIN, WITH, RETURNING clauses).
+    # If so, route through query path instead of execute path.
     sql = query_struct.statement
-
-    # Convert map arguments to list if needed (NIFs expect lists).
-    normalised_args = normalise_args_for_query(sql, args)
 
     case EctoLibSql.Native.should_use_query_path(sql) do
       true ->
         # Query returns rows, use the query path.
+        # Convert map arguments to list if needed (NIFs expect lists).
+        normalised_args = normalise_args_for_query(sql, args)
+
         if trx_id do
           EctoLibSql.Native.query_with_trx_args(trx_id, state.conn_id, sql, normalised_args)
           |> format_query_result(state)
@@ -178,6 +178,7 @@ defmodule EctoLibSql do
 
       false ->
         # Query doesn't return rows, use the execute path (INSERT/UPDATE/DELETE).
+        # Note: execute_with_trx and execute_non_trx handle argument normalisation internally.
         if trx_id do
           EctoLibSql.Native.execute_with_trx(state, query_struct, args)
         else
@@ -228,14 +229,44 @@ defmodule EctoLibSql do
     # Supports :name, $name, and @name formats.
     param_names = extract_named_params(sql)
 
+    # Validate that all parameters exist in the map and collect missing ones.
+    missing_params =
+      Enum.filter(param_names, fn name ->
+        not has_param?(args, name)
+      end)
+
+    # Raise error if any parameters are missing.
+    if missing_params != [] do
+      missing_list = Enum.map_join(missing_params, ", ", &":#{&1}")
+
+      raise ArgumentError,
+            "Missing required parameters: #{missing_list}. " <>
+              "SQL requires: #{Enum.map_join(param_names, ", ", &":#{&1}")}"
+    end
+
     # Convert map values to list in parameter order.
     Enum.map(param_names, fn name ->
       get_param_value(args, name)
     end)
   end
 
+  # Check if a parameter exists in the map (supports both atom and string keys).
+  # Uses String.to_existing_atom/1 to avoid atom table exhaustion from dynamic SQL.
+  defp has_param?(map, name) when is_binary(name) do
+    # Try existing atom key first (common case), then string key.
+    try do
+      atom_key = String.to_existing_atom(name)
+      Map.has_key?(map, atom_key) or Map.has_key?(map, name)
+    rescue
+      ArgumentError ->
+        # Atom doesn't exist, check string key only.
+        Map.has_key?(map, name)
+    end
+  end
+
   # Get a parameter value from a map, supporting both atom and string keys.
   # Uses String.to_existing_atom/1 to avoid atom table exhaustion from dynamic SQL.
+  # This assumes the parameter exists (validated by has_param?).
   defp get_param_value(map, name) when is_binary(name) do
     # Try existing atom key first (common case), then string key.
     atom_key = String.to_existing_atom(name)
