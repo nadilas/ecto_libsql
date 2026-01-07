@@ -146,6 +146,9 @@ defmodule EctoLibSql.Native do
   def set_authorizer(_conn_id, _pid), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
+  def should_use_query_path(_sql), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
   def pragma_query(_conn_id, _pragma_stmt), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
@@ -374,6 +377,21 @@ defmodule EctoLibSql.Native do
   end
 
   @doc false
+  # Check if a map has a key, supporting both atom and string keys.
+  # This avoids creating atoms at runtime while allowing users to pass
+  # either %{name: value} or %{"name" => value}.
+  defp has_map_key_flexible?(_map, nil), do: false
+
+  defp has_map_key_flexible?(map, name) when is_binary(name) do
+    # Try atom key first (more common), then string key.
+    atom_key = String.to_existing_atom(name)
+    Map.has_key?(map, atom_key) or Map.has_key?(map, name)
+  rescue
+    ArgumentError ->
+      # Atom doesn't exist, check string key only.
+      Map.has_key?(map, name)
+  end
+
   # Get a value from a map, supporting both atom and string keys.
   # This avoids creating atoms at runtime while allowing users to pass
   # either %{name: value} or %{"name" => value}.
@@ -387,6 +405,41 @@ defmodule EctoLibSql.Native do
     ArgumentError ->
       # Atom doesn't exist, try string key only.
       Map.get(map, name, nil)
+  end
+
+  # Validate that all required parameters exist in the map.
+  # Raises ArgumentError if any parameters are missing or if map is used with positional params.
+  defp validate_params_exist(param_map, param_names) do
+    # Check if we have positional parameters (nil entries from ?).
+    has_positional = Enum.any?(param_names, &is_nil/1)
+
+    if has_positional do
+      # SQL uses positional parameters (?), but user provided a map.
+      # This is a type mismatch - positional params require a list.
+      raise ArgumentError,
+            "Cannot use named parameter map with SQL that has positional parameters (?). " <>
+              "Use a list of values instead, e.g., [value1, value2] not %{key: value}"
+    end
+
+    # Filter out any nil names (shouldn't happen after above check, but defensive).
+    named_params = Enum.reject(param_names, &is_nil/1)
+
+    # Validate that all named parameters exist in the map.
+    missing_params =
+      Enum.filter(named_params, fn name ->
+        not has_map_key_flexible?(param_map, name)
+      end)
+
+    if missing_params != [] do
+      missing_list = Enum.map_join(missing_params, ", ", &":#{&1}")
+      all_params = Enum.map_join(named_params, ", ", &":#{&1}")
+
+      raise ArgumentError,
+            "Missing required parameters: #{missing_list}. " <>
+              "SQL requires: #{all_params}"
+    end
+
+    :ok
   end
 
   # ETS-based LRU cache for parameter metadata.
@@ -527,7 +580,10 @@ defmodule EctoLibSql.Native do
         introspect_and_cache_params(conn_id, statement, param_map)
 
       param_names ->
-        # Cache hit - convert map to positional list using cached order.
+        # Cache hit - validate parameters exist before conversion (raises on missing params).
+        validate_params_exist(param_map, param_names)
+
+        # Convert map to positional list using cached order.
         # Support both atom and string keys in the input map.
         Enum.map(param_names, fn name ->
           get_map_value_flexible(param_map, name)
@@ -559,6 +615,9 @@ defmodule EctoLibSql.Native do
 
             # Cache the parameter names for future calls.
             cache_param_names(statement, param_names)
+
+            # Validate that all required parameters exist in the map (raises on missing params).
+            validate_params_exist(param_map, param_names)
 
             # Convert map to positional list using the names.
             # Support both atom and string keys in the input map.
@@ -900,43 +959,62 @@ defmodule EctoLibSql.Native do
   end
 
   @doc """
-  Execute a prepared statement with arguments (for non-SELECT queries).
-  Returns the number of affected rows.
+  Execute a prepared statement with arguments.
+
+  Automatically routes to query_stmt if the statement returns rows (e.g., SELECT, EXPLAIN, RETURNING),
+  or to execute_prepared if it doesn't (e.g., INSERT/UPDATE/DELETE without RETURNING).
 
   ## Parameters
     - state: The connection state
     - stmt_id: The statement ID from prepare/2
-    - sql: The original SQL (for sync detection)
+    - sql: The original SQL (for sync detection and statement type detection)
     - args: List of positional parameters OR map with atom keys for named parameters
 
   ## Examples
 
-      # Positional parameters
+      # INSERT without RETURNING
       {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "INSERT INTO users (name) VALUES (?)")
-      {:ok, rows_affected} = EctoLibSql.Native.execute_stmt(state, stmt_id, sql, ["Alice"])
+      {:ok, num_rows} = EctoLibSql.Native.execute_stmt(state, stmt_id, sql, ["Alice"])
 
-      # Named parameters with atom keys
-      {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "INSERT INTO users (name) VALUES (:name)")
-      {:ok, rows_affected} = EctoLibSql.Native.execute_stmt(state, stmt_id, sql, %{name: "Alice"})
+      # SELECT query
+      {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "SELECT * FROM users WHERE id = ?")
+      {:ok, result} = EctoLibSql.Native.execute_stmt(state, stmt_id, sql, [1])
+
+      # EXPLAIN query
+      {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "EXPLAIN QUERY PLAN SELECT * FROM users")
+      {:ok, result} = EctoLibSql.Native.execute_stmt(state, stmt_id, sql, [])
+
+      # INSERT with RETURNING
+      {:ok, stmt_id} = EctoLibSql.Native.prepare(state, "INSERT INTO users (name) VALUES (?) RETURNING *")
+      {:ok, result} = EctoLibSql.Native.execute_stmt(state, stmt_id, sql, ["Alice"])
   """
   def execute_stmt(
-        %EctoLibSql.State{conn_id: conn_id, mode: mode, sync: syncx} = _state,
+        %EctoLibSql.State{conn_id: conn_id, mode: mode, sync: syncx} = state,
         stmt_id,
         sql,
         args
       ) do
-    # Normalise arguments (convert map to positional list if needed).
-    case normalise_arguments_for_stmt(conn_id, stmt_id, args) do
-      {:error, reason} ->
-        {:error, "Failed to normalise parameters: #{reason}"}
+    # Check if this statement returns rows (uses the NIF for consistency with handle_execute).
+    case should_use_query_path(sql) do
+      true ->
+        # Use query_stmt path for statements that return rows.
+        query_stmt(state, stmt_id, args)
 
-      normalised_args ->
-        case execute_prepared(conn_id, stmt_id, mode, syncx, sql, normalised_args) do
-          num_rows when is_integer(num_rows) ->
-            {:ok, num_rows}
-
+      false ->
+        # Use execute path for statements that don't return rows.
+        # Normalise arguments (convert map to positional list if needed).
+        case normalise_arguments_for_stmt(conn_id, stmt_id, args) do
           {:error, reason} ->
-            {:error, reason}
+            {:error, "Failed to normalise parameters: #{reason}"}
+
+          normalised_args ->
+            case execute_prepared(conn_id, stmt_id, mode, syncx, sql, normalised_args) do
+              num_rows when is_integer(num_rows) ->
+                {:ok, num_rows}
+
+              {:error, reason} ->
+                {:error, reason}
+            end
         end
     end
   end

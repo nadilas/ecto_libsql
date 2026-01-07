@@ -97,6 +97,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     ```
   - 9 new CTE tests covering simple, recursive, and edge cases
 
+- **EXPLAIN QUERY PLAN Support**
+  - Full support for SQLite's `EXPLAIN QUERY PLAN` via Ecto's `Repo.explain/2` and `Repo.explain/3`
+  - **Query detection**: Rust NIF `should_use_query()` now detects EXPLAIN statements for proper query/execute routing
+  - **Ecto.Multi compatibility**: `explain_query/4` callback returns `{:ok, maps}` tuple format required by Ecto.Multi
+  - **Output format**: Returns list of maps with `id`, `parent`, `notused`, and `detail` keys matching SQLite's output
+  - **Usage examples**:
+    ```elixir
+    # Basic EXPLAIN QUERY PLAN
+    {:ok, plan} = Repo.explain(:all, from(u in User, where: u.active == true))
+    # Returns: [%{"id" => 2, "parent" => 0, "notused" => 0, "detail" => "SCAN users"}]
+
+    # With options
+    {:ok, plan} = Repo.explain(:all, query, analyze: true)
+
+    # Direct SQL execution
+    {:ok, _, result, _state} = EctoLibSql.handle_execute(
+      "EXPLAIN QUERY PLAN SELECT * FROM users WHERE id = ?",
+      [1],
+      [],
+      state
+    )
+    ```
+  - **Implementation**: Query detection in `utils.rs:should_use_query()`, SQL generation in `connection.ex:explain_query/4`
+  - **Test coverage**: 12 tests across `explain_simple_test.exs` and `explain_query_test.exs`
+
 ## [0.8.3] - 2025-12-29
 
 ### Added
