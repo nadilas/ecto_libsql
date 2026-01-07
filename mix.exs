@@ -1,7 +1,7 @@
 defmodule EctoLibSql.MixProject do
   use Mix.Project
 
-  @version "0.8.3"
+  @version "0.8.6"
   @source_url "https://github.com/ocean/ecto_libsql"
 
   def project do
