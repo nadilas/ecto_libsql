@@ -26,57 +26,30 @@ The `libsql-sqlite3-parser` crate through version 0.13.0 can crash when processi
 - Invalid UTF-8 from Elixir would cause NIF conversion errors before reaching our code
 - These errors are caught and returned to Elixir as error tuples
 
-##### 3. **Explicit Validation (Defence-in-Depth)**
-- We've added explicit UTF-8 validation at all SQL entry points:
-  - `prepare_statement/2` in `statement.rs`
-  - `declare_cursor/3` in `cursor.rs`
-  - `execute_batch_native/3` in `batch.rs`
-- This validation provides:
-  - Explicit documentation of security guarantees
-  - Additional safety layer against future changes
-  - Clear audit trail for security reviews
-
-#### Implementation Details
-
-The `validate_utf8_sql/1` function in `native/ecto_libsql/src/utils.rs` (lines 13-60) performs the validation:
-
-```rust
-pub fn validate_utf8_sql(sql: &str) -> Result<(), rustler::Error> {
-    // Validates UTF-8 boundaries and character indices
-    // Returns descriptive errors for any invalid sequences
-}
-```
-
-This validation is called at the start of every NIF function that accepts SQL, before the SQL reaches `libsql-sqlite3-parser`.
-
 #### Why This Vulnerability Doesn't Affect Us
 
-Even without our explicit validation (layer 3), the vulnerability cannot be triggered because:
+In our case, the vulnerability cannot be triggered because:
 
 1. **Elixir strings are UTF-8:** Elixir enforces UTF-8 for all string literals and string operations
 2. **Rustler enforces UTF-8:** Converting from Elixir to Rust `&str` validates UTF-8
 3. **Type safety:** Rust's `&str` cannot contain invalid UTF-8 by definition
-
-The explicit validation we've added serves as **defence-in-depth** and **documentation** of our security posture.
 
 #### Upstream Fix Status
 
 The vulnerability is fixed in commit `14f422a` of `libsql-sqlite3-parser`, but this fix has not been released to crates.io yet. Once a new version is published, we will:
 
 1. Update our `libsql` dependency (which will pull in the fixed parser)
-2. Continue to maintain our explicit validation as defence-in-depth
-3. Update this document with the new version information
+2. Update this document with the new version information
 
 #### Testing
 
 Our test suite includes UTF-8 validation coverage:
 - All named parameter tests exercise the validation code paths
 - Invalid UTF-8 would be caught by Rustler before reaching our code
-- Our validation function is called on every SQL query
 
 #### Reporting Security Issues
 
-If you discover a security vulnerability in ecto_libsql, please email the maintainers directly rather than opening a public issue. See our [CONTRIBUTING.md](CONTRIBUTING.md) for contact information.
+If you discover a security vulnerability in ecto_libsql, please email the maintainers directly rather than opening a public issue.
 
 ## Security Best Practices
 
