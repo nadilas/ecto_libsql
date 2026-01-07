@@ -526,6 +526,7 @@ defmodule Ecto.Adapters.LibSql.Connection do
 
     # Validate first column is 'id'
     [first_column | _rest] = columns
+
     unless first_column == "id" do
       raise ArgumentError,
             "R*Tree tables must have 'id' as the first column. Got '#{first_column}' instead."

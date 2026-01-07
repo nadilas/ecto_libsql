@@ -304,7 +304,10 @@ defmodule Ecto.RTreeTest do
           "SELECT min_lat, max_lat FROM geo_regions WHERE id = 1"
         )
 
-      assert result.rows == [[-34.1, -33.7]]
+      # Use approximate comparison for floats due to SQLite floating point precision
+      assert [[min_lat, max_lat]] = result.rows
+      assert_in_delta min_lat, -34.1, 0.01
+      assert_in_delta max_lat, -33.7, 0.01
     end
 
     test "deletes R*Tree entry" do
