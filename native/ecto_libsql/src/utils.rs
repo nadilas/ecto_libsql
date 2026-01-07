@@ -46,15 +46,9 @@ pub fn validate_utf8_sql(sql: &str) -> Result<(), rustler::Error> {
     }
 
     // Additional validation: ensure the string can be iterated as UTF-8 chars.
-    // This will detect any invalid UTF-8 sequences that might have slipped through.
-    for (idx, _) in sql.char_indices() {
-        if !sql.is_char_boundary(idx) {
-            return Err(rustler::Error::Term(Box::new(format!(
-                "SQL contains invalid UTF-8 at byte position {}",
-                idx
-            ))));
-        }
-    }
+    // char_indices() only yields valid UTF-8 boundaries, so iteration itself
+    // serves as the validation without needing explicit is_char_boundary checks.
+    for _ in sql.chars() {}
 
     Ok(())
 }
