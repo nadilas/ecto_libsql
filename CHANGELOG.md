@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.6] - 2026-01-07
 
 ### Added
 
@@ -121,6 +121,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     ```
   - **Implementation**: Query detection in `utils.rs:should_use_query()`, SQL generation in `connection.ex:explain_query/4`
   - **Test coverage**: 12 tests across `explain_simple_test.exs` and `explain_query_test.exs`
+
+- **STRICT Table Option Support**
+  - Added support for SQLite's STRICT table option for stronger type enforcement
+  - Usage: Pass `options: [strict: true]` to `create table()` in migrations
+  - Example:
+    ```elixir
+    create table(:users, options: [strict: true]) do
+      add :name, :string
+      add :age, :integer
+    end
+    ```
+  - STRICT tables enforce column type constraints at INSERT/UPDATE time
+  - Helps catch type errors early and ensures data integrity
+  - Can be combined with other table options
+
+- **Enhanced JSON and JSONB Functions**
+  - Added comprehensive JSON manipulation functions for working with JSON data
+  - SQL injection protection with proper parameter handling
+  - Functions include `json_extract/2`, `json_type/2`, `json_valid/1`, and more
+  - Consolidated JSON result handling for consistent behaviour
+  - Extensive test coverage for all JSON operations
+
+- **Cross-Connection Security Tests**
+  - Added comprehensive tests for transaction isolation across connections
+  - Validates that transactions from one connection cannot be accessed by another
+  - Tests cover savepoints, prepared statements, and cursors
+  - Ensures strict connection ownership and prevents security vulnerabilities
+
+- **Generated/Computed Columns Documentation**
+  - Added documentation for SQLite's generated column support
+  - Covers both VIRTUAL and STORED generated columns
+  - Examples of computed columns in migrations
+
+### Security
+
+- **CVE-2025-47736 Protection**
+  - Comprehensive parameter validation to prevent atom table exhaustion
+  - Improved parameter extraction to avoid malicious input exploitation
+  - Validates all named parameters against statement introspection
+  - Proper error handling for invalid or malicious parameter names
+  - See [security documentation](SECURITY.md) for details
+
+### Fixed
+
+- **Statement Caching Improvements**
+  - Replaced unbounded `persistent_term` cache with bounded ETS LRU cache
+  - Prevents memory leaks from unlimited prepared statement caching
+  - Configurable cache size with automatic eviction of least-recently-used entries
+  - Improved cache performance and memory footprint
+
+- **Error Handling Improvements**
+  - Propagate parameter introspection errors instead of silently falling back
+  - Return descriptive errors for invalid argument types in parameter normalisation
+  - Improved error tuple handling in fuzz tests
+  - Better error messages throughout the codebase
+
+- **Code Quality Improvements**
+  - Fixed Credo warnings (nesting, unused variables, assertions)
+  - Standardised unused variable naming for consistency
+  - Improved test reliability and reduced flakiness
+  - Better state threading in security tests
+  - Fixed binary blob round-trip handling in tests
+
+### Changed
+
+- **Rust UTF-8 Validation Cleanup**
+  - Removed redundant UTF-8 validation comments and tautological boundary checks
+  - Removed redundant `validate_utf8_sql` function (SQLite already validates UTF-8)
+  - Cleaner, more maintainable codebase
 
 ## [0.8.3] - 2025-12-29
 
