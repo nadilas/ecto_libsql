@@ -1113,7 +1113,7 @@ R*Tree is a specialised spatial index for efficient multidimensional range queri
 
 R*Tree tables are created as virtual tables by passing `rtree: true` to the table options in migrations. Two approaches prevent duplicate id columns:
 
-**Option 1: Use Ecto's default id (recommended)**
+##### Option 1: Use Ecto's default id (recommended)
 
 ```elixir
 defmodule MyApp.Repo.Migrations.CreateLocationsRTree do
@@ -1132,7 +1132,7 @@ end
 
 Ecto automatically creates the `id` column, resulting in: `id, min_lat, max_lat, min_lng, max_lng` (5 columns, odd ✓).
 
-**Option 2: Disable default id and add explicit id**
+##### Option 2: Disable default id and add explicit id
 
 ```elixir
 defmodule MyApp.Repo.Migrations.CreateEventsRTree do
