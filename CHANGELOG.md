@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **R*Tree Spatial Indexing Support**
+  - Full support for SQLite R*Tree virtual tables for multidimensional spatial indexing
+  - **Table creation**: Use `options: [rtree: true]` in Ecto migrations
+  - **Dimensions supported**: 1D to 5D (3 to 11 columns total including ID)
+  - **Column structure**: First column must be `id` (integer primary key), followed by min/max coordinate pairs
+  - **Validation**: Automatic validation of column count (odd numbers only), first-column requirements (must be 'id'), dimensional constraints, and incompatible table options - virtual tables reject standard table options (`:strict`, `:random_rowid`, `:without_rowid`) with clear error messages
+  - **Use cases**: Geographic bounding boxes, collision detection, time-range queries, spatial indexing
+  - **Migration example**:
+    ```elixir
+    create table(:geo_regions, options: [rtree: true]) do
+      add :min_lat, :float
+      add :max_lat, :float
+      add :min_lng, :float
+      add :max_lng, :float
+    end
+    ```
+  - **Query patterns**: Point containment, bounding box intersection, range queries
+  - **Virtual table syntax**: Generates `CREATE VIRTUAL TABLE ... USING rtree(...)` DDL
+  - **Implementation**: New `create_rtree_table/3`, `validate_rtree_options!/1`, and `validate_rtree_columns!/1` helpers in `connection.ex`
+  - **Comprehensive test coverage** in `test/rtree_test.exs` covering 2D/3D tables, validation, queries, and CRUD operations
+  - **Documentation**: Full guide in AGENTS.md with examples for geographic data, time-series, and hybrid vector+spatial search
+  - **Comparison guide**: R*Tree vs Vector Search decision matrix in documentation
+  - **Ecto integration**: Works with Ecto schemas using fragments for spatial queries
+
 - **Named Parameters Execution Support**
   - Full support for SQLite named parameter syntax in prepared statements and direct execution
   - **Three SQLite syntaxes supported**: `:name`, `@name`, `$name`
