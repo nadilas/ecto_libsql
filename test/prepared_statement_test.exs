@@ -736,4 +736,238 @@ defmodule EctoLibSql.PreparedStatementTest do
       :ok = Native.close_stmt(stmt_id)
     end
   end
+
+  describe "concurrent prepared statement usage" do
+    test "multiple processes can use different prepared statements concurrently", %{
+      state: state
+    } do
+      # Setup: Insert test data
+      Enum.each(1..10, fn i ->
+        {:ok, _query, _result, _} =
+          exec_sql(state, "INSERT INTO users (id, name, email) VALUES (?, ?, ?)", [
+            i,
+            "User#{i}",
+            "user#{i}@example.com"
+          ])
+      end)
+
+      # Prepare multiple statements
+      {:ok, stmt_select_id} = Native.prepare(state, "SELECT * FROM users WHERE id = ?")
+      {:ok, stmt_select_name} = Native.prepare(state, "SELECT * FROM users WHERE name = ?")
+
+      # Create multiple tasks executing different prepared statements concurrently
+      tasks =
+        Enum.map(1..5, fn i ->
+          Task.async(fn ->
+            # Each task executes SELECT by ID
+            {:ok, result_id} = Native.query_stmt(state, stmt_select_id, [i])
+            assert length(result_id.rows) == 1
+
+            # Each task executes SELECT by name
+            {:ok, result_name} = Native.query_stmt(state, stmt_select_name, ["User#{i}"])
+            assert length(result_name.rows) == 1
+
+            # Verify both queries return same data
+            assert hd(result_id.rows) == hd(result_name.rows)
+
+            :ok
+          end)
+        end)
+
+      # Wait for all tasks to complete successfully
+      results = Task.await_many(tasks, 5000)
+      assert Enum.all?(results, &(&1 == :ok))
+
+      # Cleanup
+      Native.close_stmt(stmt_select_id)
+      Native.close_stmt(stmt_select_name)
+    end
+
+    test "single prepared statement can be safely used by multiple processes", %{state: state} do
+      # Setup: Insert test data
+      Enum.each(1..20, fn i ->
+        {:ok, _query, _result, _} =
+          exec_sql(state, "INSERT INTO users (id, name, email) VALUES (?, ?, ?)", [
+            i,
+            "User#{i}",
+            "user#{i}@example.com"
+          ])
+      end)
+
+      # Prepare a single statement to be shared across tasks
+      {:ok, stmt_id} = Native.prepare(state, "SELECT * FROM users WHERE id = ?")
+
+      # Create multiple concurrent tasks using the same prepared statement
+      tasks =
+        Enum.map(1..10, fn task_num ->
+          Task.async(fn ->
+            # Each task queries a different ID with the same prepared statement
+            {:ok, result} = Native.query_stmt(state, stmt_id, [task_num])
+            assert length(result.rows) == 1
+
+            [id, name, email] = hd(result.rows)
+            assert id == task_num
+            assert name == "User#{task_num}"
+            assert String.contains?(email, "@example.com")
+
+            # Simulate some work
+            Process.sleep(10)
+
+            :ok
+          end)
+        end)
+
+      # Wait for all tasks to complete successfully
+      results = Task.await_many(tasks, 5000)
+      assert Enum.all?(results, &(&1 == :ok))
+
+      # Verify data integrity - statement should work correctly after concurrent access
+      {:ok, final_result} = Native.query_stmt(state, stmt_id, [5])
+      assert hd(final_result.rows) == [5, "User5", "user5@example.com"]
+
+      # Cleanup
+      Native.close_stmt(stmt_id)
+    end
+
+    test "concurrent writes with prepared statements maintain consistency", %{state: state} do
+      # Setup: Create initial user
+      {:ok, _query, _result, _} =
+        exec_sql(state, "INSERT INTO users (id, name, email) VALUES (?, ?, ?)", [
+          1,
+          "Initial",
+          "initial@example.com"
+        ])
+
+      # Prepare statements for reading and writing
+      {:ok, stmt_select} = Native.prepare(state, "SELECT COUNT(*) FROM users")
+
+      {:ok, stmt_insert} =
+        Native.prepare(state, "INSERT INTO users (id, name, email) VALUES (?, ?, ?)")
+
+      # Create tasks that concurrently write data
+      tasks =
+        Enum.map(2..6, fn user_id ->
+          Task.async(fn ->
+            # Each task inserts a new user using the prepared statement
+            {:ok, _rows} =
+              Native.execute_stmt(
+                state,
+                stmt_insert,
+                "INSERT INTO users (id, name, email) VALUES (?, ?, ?)",
+                [user_id, "User#{user_id}", "user#{user_id}@example.com"]
+              )
+
+            :ok
+          end)
+        end)
+
+      # Wait for all writes to complete
+      Task.await_many(tasks, 5000)
+
+      # Verify final count (initial + 5 new users)
+      {:ok, count_result} = Native.query_stmt(state, stmt_select, [])
+      assert hd(hd(count_result.rows)) == 6
+
+      # Cleanup
+      Native.close_stmt(stmt_select)
+      Native.close_stmt(stmt_insert)
+    end
+
+    test "prepared statements handle parameter isolation across concurrent tasks", %{
+      state: state
+    } do
+      # Setup: Create test data
+      Enum.each(1..5, fn i ->
+        {:ok, _query, _result, _} =
+          exec_sql(state, "INSERT INTO users (id, name, email) VALUES (?, ?, ?)", [
+            i,
+            "User#{i}",
+            "user#{i}@example.com"
+          ])
+      end)
+
+      {:ok, stmt_id} = Native.prepare(state, "SELECT ? as param_test, id FROM users WHERE id = ?")
+
+      # Create tasks with different parameter combinations
+      tasks =
+        Enum.map(1..5, fn task_id ->
+          Task.async(fn ->
+            # Each task uses different parameters
+            {:ok, result} = Native.query_stmt(state, stmt_id, ["Task#{task_id}", task_id])
+            assert length(result.rows) == 1
+
+            [param_value, id] = hd(result.rows)
+            # Verify the parameter was not contaminated from another task
+            assert param_value == "Task#{task_id}",
+                   "Parameter #{param_value} should be Task#{task_id}"
+
+            assert id == task_id
+
+            :ok
+          end)
+        end)
+
+      # Wait for all tasks to complete successfully
+      results = Task.await_many(tasks, 5000)
+      assert Enum.all?(results, &(&1 == :ok))
+
+      # Cleanup
+      Native.close_stmt(stmt_id)
+    end
+
+    test "prepared statements maintain isolation when reset concurrently", %{state: state} do
+      # Setup: Create test data
+      Enum.each(1..10, fn i ->
+        {:ok, _query, _result, _} =
+          exec_sql(state, "INSERT INTO users (id, name, email) VALUES (?, ?, ?)", [
+            i,
+            "User#{i}",
+            "user#{i}@example.com"
+          ])
+      end)
+
+      {:ok, stmt_id} = Native.prepare(state, "SELECT * FROM users WHERE id = ?")
+
+      # Create multiple tasks that will reset the statement concurrently
+      tasks =
+        Enum.map(1..5, fn task_num ->
+          Task.async(fn ->
+            # Each task executes and resets the statement
+            {:ok, result} = Native.query_stmt(state, stmt_id, [task_num])
+            assert length(result.rows) == 1
+
+            [id, name, _email] = hd(result.rows)
+            assert id == task_num
+            assert name == "User#{task_num}"
+
+            # Explicitly reset statement to clear bindings
+            :ok = Native.reset_stmt(state, stmt_id)
+
+            # Execute again after reset
+            {:ok, result2} = Native.query_stmt(state, stmt_id, [task_num + 5])
+
+            # Should get different data after reset
+            case result2.rows do
+              [[new_id, _, _]] ->
+                # Either get the new ID or empty result is fine
+                # (depends on whether ID exists)
+                assert new_id == task_num + 5 or new_id == nil
+
+              [] ->
+                # No data for that ID - this is fine
+                :ok
+            end
+
+            :ok
+          end)
+        end)
+
+      # Wait for all tasks to complete successfully
+      results = Task.await_many(tasks, 5000)
+      assert Enum.all?(results, &(&1 == :ok))
+
+      # Cleanup
+      Native.close_stmt(stmt_id)
+    end
+  end
 end
