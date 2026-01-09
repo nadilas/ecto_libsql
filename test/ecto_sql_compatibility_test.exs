@@ -52,9 +52,7 @@ defmodule EctoLibSql.EctoSqlCompatibilityTest do
     """)
 
     on_exit(fn ->
-      File.rm(@test_db)
-      File.rm(@test_db <> "-shm")
-      File.rm(@test_db <> "-wal")
+      EctoLibSql.TestHelpers.cleanup_db_files(@test_db)
     end)
 
     :ok

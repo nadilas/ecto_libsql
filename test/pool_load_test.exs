@@ -32,18 +32,7 @@ defmodule EctoLibSql.PoolLoadTest do
 
     on_exit(fn ->
       EctoLibSql.disconnect([], state)
-      
-      # Clean up database files, tolerating :enoent (file doesn't exist)
-      # but surfacing other errors
-      Enum.each([test_db, test_db <> "-shm", test_db <> "-wal"], fn file ->
-        case File.rm(file) do
-          :ok -> :ok
-          {:error, :enoent} -> :ok  # File doesn't exist - expected, ignore
-          {:error, reason} ->
-            # Unexpected error - surface it
-            IO.warn("Failed to clean up #{file}: #{inspect(reason)}")
-        end
-      end)
+      EctoLibSql.TestHelpers.cleanup_db_files(test_db)
     end)
 
     {:ok, test_db: test_db}

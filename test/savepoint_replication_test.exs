@@ -53,9 +53,7 @@ defmodule EctoLibSql.SavepointReplicationTest do
         _ -> :ok
       end
 
-      File.rm(test_db)
-      File.rm(test_db <> "-shm")
-      File.rm(test_db <> "-wal")
+      EctoLibSql.TestHelpers.cleanup_db_files(test_db)
     end)
 
     {:ok, state: state, table: test_table}

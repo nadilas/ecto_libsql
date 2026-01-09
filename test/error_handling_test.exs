@@ -220,9 +220,7 @@ defmodule EctoLibSql.ErrorHandlingTest do
 
       # Cleanup
       EctoLibSql.Native.close(real_conn_id, :conn_id)
-      File.rm(test_db)
-      File.rm(test_db <> "-wal")
-      File.rm(test_db <> "-shm")
+      EctoLibSql.TestHelpers.cleanup_db_files(test_db)
     end
   end
 

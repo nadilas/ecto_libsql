@@ -14,15 +14,11 @@ defmodule EctoLibSqlSmokeTest do
 
   setup_all do
     # Clean up any existing test database from previous runs
-    File.rm("z_ecto_libsql_test-smoke.db")
-    File.rm("z_ecto_libsql_test-smoke.db-shm")
-    File.rm("z_ecto_libsql_test-smoke.db-wal")
+    EctoLibSql.TestHelpers.cleanup_db_files("z_ecto_libsql_test-smoke.db")
 
     on_exit(fn ->
       # Clean up at end of all tests too
-      File.rm("z_ecto_libsql_test-smoke.db")
-      File.rm("z_ecto_libsql_test-smoke.db-shm")
-      File.rm("z_ecto_libsql_test-smoke.db-wal")
+      EctoLibSql.TestHelpers.cleanup_db_files("z_ecto_libsql_test-smoke.db")
     end)
 
     :ok
@@ -41,9 +37,7 @@ defmodule EctoLibSqlSmokeTest do
 
     # Clean up database file after test completes
     on_exit(fn ->
-      File.rm(test_db)
-      File.rm(test_db <> "-shm")
-      File.rm(test_db <> "-wal")
+      EctoLibSql.TestHelpers.cleanup_db_files(test_db)
     end)
 
     {:ok, opts: opts}

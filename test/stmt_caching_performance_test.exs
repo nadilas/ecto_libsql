@@ -32,9 +32,7 @@ defmodule EctoLibSql.StatementCachingPerformanceTest do
 
     on_exit(fn ->
       Native.close(state.conn_id, :conn_id)
-      File.rm(db_file)
-      File.rm(db_file <> "-shm")
-      File.rm(db_file <> "-wal")
+      EctoLibSql.TestHelpers.cleanup_db_files(db_file)
     end)
 
     {:ok, state: state}

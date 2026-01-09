@@ -95,9 +95,7 @@ defmodule EctoLibSql.EctoSqlTransactionCompatTest do
       Process.sleep(@cleanup_delay_ms)
 
       # Clean up all database files (ignore errors if files don't exist)
-      File.rm(test_db)
-      File.rm("#{test_db}-shm")
-      File.rm("#{test_db}-wal")
+      EctoLibSql.TestHelpers.cleanup_db_files(test_db)
     end)
 
     :ok
