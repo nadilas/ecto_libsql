@@ -32,15 +32,26 @@ defmodule EctoLibSql.PoolLoadTest do
 
     on_exit(fn ->
       EctoLibSql.disconnect([], state)
-      File.rm(test_db)
-      File.rm(test_db <> "-shm")
-      File.rm(test_db <> "-wal")
+      
+      # Clean up database files, tolerating :enoent (file doesn't exist)
+      # but surfacing other errors
+      Enum.each([test_db, test_db <> "-shm", test_db <> "-wal"], fn file ->
+        case File.rm(file) do
+          :ok -> :ok
+          {:error, :enoent} -> :ok  # File doesn't exist - expected, ignore
+          {:error, reason} ->
+            # Unexpected error - surface it
+            IO.warn("Failed to clean up #{file}: #{inspect(reason)}")
+        end
+      end)
     end)
 
     {:ok, test_db: test_db}
   end
 
   describe "concurrent independent connections" do
+    @tag :slow
+    @tag :flaky
     test "multiple concurrent connections execute successfully", %{test_db: test_db} do
       # Spawn 5 concurrent connections
       tasks =
@@ -80,6 +91,8 @@ defmodule EctoLibSql.PoolLoadTest do
       assert [[5]] = result.rows
     end
 
+    @tag :slow
+    @tag :flaky
     test "rapid burst of concurrent connections succeeds", %{test_db: test_db} do
       # Fire 10 connections rapidly
       tasks =
@@ -109,6 +122,8 @@ defmodule EctoLibSql.PoolLoadTest do
   end
 
   describe "long-running operations" do
+    @tag :slow
+    @tag :flaky
     test "long transaction doesn't cause timeout issues", %{test_db: test_db} do
       {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 5000)
 
@@ -131,6 +146,8 @@ defmodule EctoLibSql.PoolLoadTest do
       EctoLibSql.disconnect([], state)
     end
 
+    @tag :slow
+    @tag :flaky
     test "multiple concurrent transactions complete despite duration", %{test_db: test_db} do
       tasks =
         Enum.map(1..3, fn i ->
@@ -177,6 +194,8 @@ defmodule EctoLibSql.PoolLoadTest do
   end
 
   describe "connection recovery" do
+    @tag :slow
+    @tag :flaky
     test "connection recovers after query error", %{test_db: test_db} do
       {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
 
@@ -215,6 +234,8 @@ defmodule EctoLibSql.PoolLoadTest do
       assert [[2]] = result.rows
     end
 
+    @tag :slow
+    @tag :flaky
     test "multiple connections recover independently from errors", %{test_db: test_db} do
       tasks =
         Enum.map(1..3, fn i ->
@@ -268,6 +289,8 @@ defmodule EctoLibSql.PoolLoadTest do
   end
 
   describe "resource cleanup under load" do
+    @tag :slow
+    @tag :flaky
     test "prepared statements cleaned up under concurrent load", %{test_db: test_db} do
       tasks =
         Enum.map(1..5, fn i ->
@@ -309,6 +332,8 @@ defmodule EctoLibSql.PoolLoadTest do
   end
 
   describe "transaction isolation" do
+    @tag :slow
+    @tag :flaky
     test "concurrent transactions don't interfere with each other", %{test_db: test_db} do
       tasks =
         Enum.map(1..4, fn i ->

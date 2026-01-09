@@ -511,8 +511,10 @@ async fn test_create_db_invalid_permissions() {
 }
 
 #[tokio::test]
-async fn test_readonly_database_insert() {
+async fn test_database_persistence_and_reopen() {
     let db_path = setup_test_db();
+    
+    // Create database, table, and insert data
     let db = Builder::new_local(&db_path).build().await.unwrap();
     let conn = db.connect().unwrap();
 
@@ -527,18 +529,25 @@ async fn test_readonly_database_insert() {
     .await
     .unwrap();
 
+    // Verify data was inserted
+    let mut rows = conn.query("SELECT COUNT(*) FROM users", ()).await.unwrap();
+    let row = rows.next().await.unwrap().unwrap();
+    let count = row.get::<i64>(0).unwrap();
+    assert_eq!(count, 1, "Data should be inserted");
+
     drop(conn);
     drop(db);
 
-    // Now try to open with read-only connection
-    // (This is a libsql feature - pragma may not be available on all builds)
-    // Just verify it doesn't panic if attempted
+    // Reopen database and verify persistence
+    // This tests that data survives connection close/reopen cycles
     let db2 = Builder::new_local(&db_path).build().await.unwrap();
     let conn2 = db2.connect().unwrap();
 
-    // Query should work
-    let result = conn2.query("SELECT COUNT(*) FROM users", ()).await;
-    assert!(result.is_ok(), "Read operations should work");
+    // Query should work and return persisted data
+    let mut rows = conn2.query("SELECT COUNT(*) FROM users", ()).await.unwrap();
+    let row = rows.next().await.unwrap().unwrap();
+    let count = row.get::<i64>(0).unwrap();
+    assert_eq!(count, 1, "Persisted data should be readable after reopening");
 
     cleanup_test_db(&db_path);
 }
