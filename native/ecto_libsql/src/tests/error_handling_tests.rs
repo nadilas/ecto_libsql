@@ -644,7 +644,7 @@ async fn test_sql_injection_attempt() {
         .await
         .unwrap();
 
-    // SQL injection attempt should be safely parameterized
+    // SQL injection attempt should be safely parameterised
     let result = conn
         .execute(
             "INSERT INTO users (id, name) VALUES (?1, ?2)",
@@ -657,7 +657,7 @@ async fn test_sql_injection_attempt() {
 
     assert!(
         result.is_ok(),
-        "Parameterized query should safely insert injection string"
+        "Parameterised query should safely insert injection string"
     );
 
     // Verify table still exists and contains the literal string
@@ -666,7 +666,7 @@ async fn test_sql_injection_attempt() {
     let count = row.get::<i64>(0).unwrap();
     assert_eq!(
         count, 1,
-        "Table should still exist with parameterized injection"
+        "Table should still exist with parameterised injection"
     );
 
     cleanup_test_db(&db_path);
