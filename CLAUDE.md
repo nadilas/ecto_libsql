@@ -468,6 +468,45 @@ mix test --exclude turso_remote             # Skip Turso tests
 - Type conversions (Elixir ↔ SQLite)
 - Concurrent operations
 
+### Test Variable Naming Conventions
+
+For state threading in tests, use consistent variable names and patterns:
+
+**Variable Naming by Scope**:
+```elixir
+state      # Connection scope
+trx_state  # Transaction scope  
+cursor     # Cursor scope
+stmt_id    # Prepared statement ID scope
+```
+
+**Error Handling Pattern**: 
+
+When an error operation returns updated state, you must decide if that state is needed next:
+
+```elixir
+# ✅ If state IS needed for subsequent operations → Rebind
+result = EctoLibSql.handle_execute(sql, params, [], trx_state)
+assert {:error, _reason, trx_state} = result  # Rebind - reuse updated state
+:ok = EctoLibSql.Native.rollback_to_savepoint_by_name(trx_state, "sp1")
+
+# ✅ If state is NOT needed → Discard with underscore
+result = EctoLibSql.handle_execute(sql, params, [], trx_state)
+assert {:error, _reason, _state} = result  # Discard - not reused
+:ok = EctoLibSql.Native.rollback_to_savepoint_by_name(trx_state, "sp1")
+
+# ✅ For terminal operations → Use underscore variable name
+assert {:error, %EctoLibSql.Error{}, _conn} = EctoLibSql.handle_execute(...)
+```
+
+**Add clarifying comments** when rebinding state:
+```elixir
+# Rebind trx_state - error tuple contains updated transaction state needed for recovery
+assert {:error, _reason, trx_state} = result
+```
+
+See [TEST_STATE_VARIABLE_CONVENTIONS.md](TEST_STATE_VARIABLE_CONVENTIONS.md) for detailed guidance.
+
 ### Turso Remote Tests
 
 ⚠️ **Cost Warning**: Creates real cloud databases. Only run when developing remote/replica functionality.

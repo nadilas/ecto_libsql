@@ -339,6 +339,7 @@ defmodule EctoLibSql.SavepointTest do
           "Bob"
         ])
 
+      # Discard error state - next operation uses original trx_state
       assert {:error, _reason, _state} = result
 
       # Rollback savepoint to recover

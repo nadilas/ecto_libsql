@@ -218,6 +218,7 @@ defmodule EctoLibSql.SavepointReplicationTest do
           trx_state
         )
 
+      # Rebind trx_state - error tuple contains updated transaction state needed for recovery
       assert {:error, _reason, trx_state} = result
 
       # Rollback savepoint to recover
