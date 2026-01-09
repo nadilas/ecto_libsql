@@ -17,14 +17,44 @@
 
 use libsql::{Builder, Value};
 use std::fs;
+use std::path::PathBuf;
 use uuid::Uuid;
 
-fn setup_test_db() -> String {
-    format!("z_ecto_libsql_test-errors-{}.db", Uuid::new_v4())
+/// RAII guard that ensures database and associated SQLite files are cleaned up
+/// after all database handles (conn, db) are dropped.
+///
+/// This guard must be declared FIRST in tests so its Drop impl runs LAST,
+/// ensuring files are deleted only after the db connection is fully closed.
+/// This prevents Windows file-lock issues with .db, .db-wal, and .db-shm files.
+struct TestDbGuard {
+    db_path: PathBuf,
 }
 
-fn cleanup_test_db(db_path: &str) {
-    let _ = fs::remove_file(db_path);
+impl TestDbGuard {
+    fn new(db_path: PathBuf) -> Self {
+        TestDbGuard { db_path }
+    }
+}
+
+impl Drop for TestDbGuard {
+    fn drop(&mut self) {
+        // Remove main database file
+        let _ = fs::remove_file(&self.db_path);
+        
+        // Remove WAL (Write-Ahead Log) file
+        let wal_path = format!("{}-wal", self.db_path.display());
+        let _ = fs::remove_file(&wal_path);
+        
+        // Remove SHM (Shared Memory) file
+        let shm_path = format!("{}-shm", self.db_path.display());
+        let _ = fs::remove_file(&shm_path);
+    }
+}
+
+fn setup_test_db() -> PathBuf {
+    let temp_dir = std::env::temp_dir();
+    let db_name = format!("z_ecto_libsql_test-errors-{}.db", Uuid::new_v4());
+    temp_dir.join(db_name)
 }
 
 // ============================================================================
@@ -34,7 +64,9 @@ fn cleanup_test_db(db_path: &str) {
 #[tokio::test]
 async fn test_not_null_constraint_violation() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute(
@@ -56,13 +88,14 @@ async fn test_not_null_constraint_violation() {
         result.is_err(),
         "Expected constraint error for NULL in NOT NULL column"
     );
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_unique_constraint_violation() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute(
@@ -98,13 +131,14 @@ async fn test_unique_constraint_violation() {
         result.is_err(),
         "Expected unique constraint error for duplicate email"
     );
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_primary_key_constraint_violation() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)", ())
@@ -131,13 +165,14 @@ async fn test_primary_key_constraint_violation() {
         result.is_err(),
         "Expected primary key constraint error for duplicate id"
     );
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_check_constraint_violation() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute(
@@ -167,7 +202,6 @@ async fn test_check_constraint_violation() {
         result.is_err(),
         "Expected check constraint error for negative price"
     );
-    cleanup_test_db(&db_path);
 }
 
 // ============================================================================
@@ -177,7 +211,9 @@ async fn test_check_constraint_violation() {
 #[tokio::test]
 async fn test_invalid_sql_syntax() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     // Invalid SQL should return error, not panic
@@ -186,26 +222,28 @@ async fn test_invalid_sql_syntax() {
         .await;
 
     assert!(result.is_err(), "Expected error for invalid SQL syntax");
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_nonexistent_table() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     // Query non-existent table should return error, not panic
     let result = conn.query("SELECT * FROM nonexistent_table", ()).await;
 
     assert!(result.is_err(), "Expected error for non-existent table");
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_nonexistent_column() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)", ())
@@ -216,20 +254,20 @@ async fn test_nonexistent_column() {
     let result = conn.query("SELECT nonexistent_column FROM users", ()).await;
 
     assert!(result.is_err(), "Expected error for non-existent column");
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_malformed_sql() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     // Incomplete SQL
     let result = conn.execute("SELECT * FROM users WHERE", ()).await;
 
     assert!(result.is_err(), "Expected error for malformed SQL");
-    cleanup_test_db(&db_path);
 }
 
 // ============================================================================
@@ -239,7 +277,9 @@ async fn test_malformed_sql() {
 #[tokio::test]
 async fn test_parameter_count_mismatch_missing() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT, email TEXT)", ())
@@ -257,13 +297,14 @@ async fn test_parameter_count_mismatch_missing() {
     // libsql behaviour varies - may accept or reject
     // The important thing is it doesn't panic
     let _ = result;
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_parameter_count_mismatch_excess() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -284,13 +325,14 @@ async fn test_parameter_count_mismatch_excess() {
 
     // libsql will either accept or reject - the key is no panic
     let _ = result;
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_type_coercion_integer_to_text() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -310,7 +352,6 @@ async fn test_type_coercion_integer_to_text() {
         result.is_ok() || result.is_err(),
         "Should handle type coercion without panic"
     );
-    cleanup_test_db(&db_path);
 }
 
 // ============================================================================
@@ -320,7 +361,9 @@ async fn test_type_coercion_integer_to_text() {
 #[tokio::test]
 async fn test_double_commit() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER)", ())
@@ -343,13 +386,14 @@ async fn test_double_commit() {
         result.is_err(),
         "Expected error for commit without active transaction"
     );
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_double_rollback() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER)", ())
@@ -372,13 +416,14 @@ async fn test_double_rollback() {
         result.is_err(),
         "Expected error for rollback without active transaction"
     );
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_commit_after_rollback() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER)", ())
@@ -398,13 +443,14 @@ async fn test_commit_after_rollback() {
     let result = conn.execute("COMMIT", ()).await;
 
     assert!(result.is_err(), "Expected error for commit after rollback");
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_query_after_rollback() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER)", ())
@@ -425,8 +471,6 @@ async fn test_query_after_rollback() {
     let row = rows.next().await.unwrap().unwrap();
     let count = row.get::<i64>(0).unwrap();
     assert_eq!(count, 0, "Data should be rolled back");
-
-    cleanup_test_db(&db_path);
 }
 
 // ============================================================================
@@ -436,7 +480,9 @@ async fn test_query_after_rollback() {
 #[tokio::test]
 async fn test_prepare_invalid_sql() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     // Prepare invalid SQL - should return error, not panic
@@ -445,13 +491,14 @@ async fn test_prepare_invalid_sql() {
         .await;
 
     assert!(result.is_err(), "Expected error for invalid SQL in prepare");
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_prepared_statement_with_parameter_mismatch() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -475,7 +522,6 @@ async fn test_prepared_statement_with_parameter_mismatch() {
 
     // Depending on libsql behaviour, may error or coerce - key is no panic
     let _ = result;
-    cleanup_test_db(&db_path);
 }
 
 // ============================================================================
@@ -513,9 +559,12 @@ async fn test_create_db_invalid_permissions() {
 #[tokio::test]
 async fn test_database_persistence_and_reopen() {
     let db_path = setup_test_db();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db_path_str = db_path.to_str().unwrap();
     
     // Create database, table, and insert data
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let db = Builder::new_local(db_path_str).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER)", ())
@@ -540,7 +589,7 @@ async fn test_database_persistence_and_reopen() {
 
     // Reopen database and verify persistence
     // This tests that data survives connection close/reopen cycles
-    let db2 = Builder::new_local(&db_path).build().await.unwrap();
+    let db2 = Builder::new_local(db_path_str).build().await.unwrap();
     let conn2 = db2.connect().unwrap();
 
     // Query should work and return persisted data
@@ -548,8 +597,6 @@ async fn test_database_persistence_and_reopen() {
     let row = rows.next().await.unwrap().unwrap();
     let count = row.get::<i64>(0).unwrap();
     assert_eq!(count, 1, "Persisted data should be readable after reopening");
-
-    cleanup_test_db(&db_path);
 }
 
 // ============================================================================
@@ -559,33 +606,37 @@ async fn test_database_persistence_and_reopen() {
 #[tokio::test]
 async fn test_empty_sql_statement() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     // Empty SQL - should return error, not panic
     let result = conn.execute("", ()).await;
 
     assert!(result.is_err(), "Expected error for empty SQL");
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_whitespace_only_sql() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     // Whitespace-only SQL - should return error, not panic
     let result = conn.execute("   \n\t  ", ()).await;
 
     assert!(result.is_err(), "Expected error for whitespace-only SQL");
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_very_long_sql_query() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER)", ())
@@ -601,14 +652,14 @@ async fn test_very_long_sql_query() {
     // Very long query should either work or fail gracefully, not panic
     let result = conn.query(&sql, ()).await;
     let _ = result; // Don't assert on success/failure, just that it doesn't panic
-
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_unicode_in_sql() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -639,14 +690,14 @@ async fn test_unicode_in_sql() {
     let row = rows.next().await.unwrap().unwrap();
     let name = row.get::<String>(0).unwrap();
     assert_eq!(name, "Ålice 中文 العربية");
-
-    cleanup_test_db(&db_path);
 }
 
 #[tokio::test]
 async fn test_sql_injection_attempt() {
     let db_path = setup_test_db();
-    let db = Builder::new_local(&db_path).build().await.unwrap();
+    let _guard = TestDbGuard::new(db_path.clone());
+    
+    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -677,6 +728,4 @@ async fn test_sql_injection_attempt() {
         count, 1,
         "Table should still exist with parameterised injection"
     );
-
-    cleanup_test_db(&db_path);
 }
