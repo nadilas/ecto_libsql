@@ -264,16 +264,22 @@ defmodule EctoLibSql.PoolLoadTest do
                   state
                 )
 
-              # Cause error
-              EctoLibSql.handle_execute("BAD SQL", [], [], state)
+              # Cause error (intentionally ignore it to test recovery)
+              _error_result = EctoLibSql.handle_execute("BAD SQL", [], [], state)
 
-              # Recovery insert
-              EctoLibSql.handle_execute(
-                "INSERT INTO test_data (value) VALUES (?)",
-                ["after_#{i}"],
-                [],
-                state
-              )
+              # Recovery insert - verify it succeeds
+              case EctoLibSql.handle_execute(
+                     "INSERT INTO test_data (value) VALUES (?)",
+                     ["after_#{i}"],
+                     [],
+                     state
+                   ) do
+                {:ok, _query, _result, _state} ->
+                  {:ok, :recovered}
+
+                {:error, reason, _state} ->
+                  {:error, {:recovery_failed, reason}}
+              end
             after
               EctoLibSql.disconnect([], state)
             end
@@ -284,7 +290,16 @@ defmodule EctoLibSql.PoolLoadTest do
 
       # All recovery queries should succeed
       Enum.each(results, fn result ->
-        assert {:ok, _query, _result, _state} = result
+        case result do
+          {:ok, :recovered} ->
+            :ok
+
+          {:error, {:recovery_failed, reason}} ->
+            flunk("Connection recovery insert failed: #{inspect(reason)}")
+
+          other ->
+            flunk("Unexpected result from connection recovery task: #{inspect(other)}")
+        end
       end)
 
       # Verify all inserts
@@ -325,13 +340,28 @@ defmodule EctoLibSql.PoolLoadTest do
                 )
 
               :ok = EctoLibSql.Native.close_stmt(stmt)
+              {:ok, :prepared_and_cleaned}
             after
               EctoLibSql.disconnect([], state)
             end
           end)
         end)
 
-      Task.await_many(tasks, 30_000)
+      results = Task.await_many(tasks, 30_000)
+
+      # Verify all prepared statement operations succeeded
+      Enum.each(results, fn result ->
+        case result do
+          {:ok, :prepared_and_cleaned} ->
+            :ok
+
+          {:error, reason} ->
+            flunk("Prepared statement operation failed: #{inspect(reason)}")
+
+          other ->
+            flunk("Unexpected result from prepared statement task: #{inspect(other)}")
+        end
+      end)
 
       # Verify all inserts succeeded
       {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
@@ -368,7 +398,14 @@ defmodule EctoLibSql.PoolLoadTest do
               # Slight delay to increase overlap
               Process.sleep(10)
 
-              EctoLibSql.Native.commit(trx_state)
+              # Explicitly handle commit result to catch errors
+              case EctoLibSql.Native.commit(trx_state) do
+                {:ok, _committed_state} ->
+                  {:ok, :committed}
+
+                {:error, reason} ->
+                  {:error, {:commit_failed, reason}}
+              end
             after
               EctoLibSql.disconnect([], state)
             end
@@ -377,9 +414,18 @@ defmodule EctoLibSql.PoolLoadTest do
 
       results = Task.await_many(tasks, 30_000)
 
-      # All should succeed
+      # All commits should succeed; fail test if any error occurred
       Enum.each(results, fn result ->
-        assert {:ok, _state} = result
+        case result do
+          {:ok, :committed} ->
+            :ok
+
+          {:error, {:commit_failed, reason}} ->
+            flunk("Concurrent transaction commit failed: #{inspect(reason)}")
+
+          other ->
+            flunk("Unexpected result from concurrent transaction: #{inspect(other)}")
+        end
       end)
 
       # All inserts should be visible
