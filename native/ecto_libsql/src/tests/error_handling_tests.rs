@@ -586,7 +586,7 @@ async fn test_very_long_sql_query() {
     // Create very long WHERE clause (1000 OR conditions)
     let mut sql = "SELECT * FROM users WHERE id = 1".to_string();
     for i in 2..=1000 {
-        sql.push_str(&format!(" OR id = {}", i));
+        sql.push_str(&format!(" OR id = {i}"));
     }
 
     // Very long query should either work or fail gracefully, not panic
