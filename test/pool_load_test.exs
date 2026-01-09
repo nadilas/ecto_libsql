@@ -48,16 +48,16 @@ defmodule EctoLibSql.PoolLoadTest do
           Task.async(fn ->
             {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
 
-            result =
+            try do
               EctoLibSql.handle_execute(
                 "INSERT INTO test_data (value) VALUES (?)",
                 ["task_#{i}"],
                 [],
                 state
               )
-
-            EctoLibSql.disconnect([], state)
-            result
+            after
+              EctoLibSql.disconnect([], state)
+            end
           end)
         end)
 
@@ -89,16 +89,16 @@ defmodule EctoLibSql.PoolLoadTest do
           Task.async(fn ->
             {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
 
-            result =
+            try do
               EctoLibSql.handle_execute(
                 "INSERT INTO test_data (value) VALUES (?)",
                 ["burst_#{i}"],
                 [],
                 state
               )
-
-            EctoLibSql.disconnect([], state)
-            result
+            after
+              EctoLibSql.disconnect([], state)
+            end
           end)
         end)
 
@@ -116,23 +116,25 @@ defmodule EctoLibSql.PoolLoadTest do
     test "long transaction doesn't cause timeout issues", %{test_db: test_db} do
       {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 5000)
 
-      # Start longer transaction
-      {:ok, trx_state} = EctoLibSql.Native.begin(state)
+      try do
+        # Start longer transaction
+        {:ok, trx_state} = EctoLibSql.Native.begin(state)
 
-      {:ok, _query, _result, trx_state} =
-        EctoLibSql.handle_execute(
-          "INSERT INTO test_data (value, duration) VALUES (?, ?)",
-          ["long", 100],
-          [],
-          trx_state
-        )
+        {:ok, _query, _result, trx_state} =
+          EctoLibSql.handle_execute(
+            "INSERT INTO test_data (value, duration) VALUES (?, ?)",
+            ["long", 100],
+            [],
+            trx_state
+          )
 
-      # Simulate some work
-      Process.sleep(100)
+        # Simulate some work
+        Process.sleep(100)
 
-      {:ok, _committed_state} = EctoLibSql.Native.commit(trx_state)
-
-      EctoLibSql.disconnect([], state)
+        {:ok, _committed_state} = EctoLibSql.Native.commit(trx_state)
+      after
+        EctoLibSql.disconnect([], state)
+      end
     end
 
     @tag :slow
@@ -143,23 +145,24 @@ defmodule EctoLibSql.PoolLoadTest do
           Task.async(fn ->
             {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
 
-            {:ok, trx_state} = EctoLibSql.Native.begin(state)
+            try do
+              {:ok, trx_state} = EctoLibSql.Native.begin(state)
 
-            {:ok, _query, _result, trx_state} =
-              EctoLibSql.handle_execute(
-                "INSERT INTO test_data (value) VALUES (?)",
-                ["trx_#{i}"],
-                [],
-                trx_state
-              )
+              {:ok, _query, _result, trx_state} =
+                EctoLibSql.handle_execute(
+                  "INSERT INTO test_data (value) VALUES (?)",
+                  ["trx_#{i}"],
+                  [],
+                  trx_state
+                )
 
-            # Hold transaction
-            Process.sleep(50)
+              # Hold transaction
+              Process.sleep(50)
 
-            result = EctoLibSql.Native.commit(trx_state)
-
-            EctoLibSql.disconnect([], state)
-            result
+              EctoLibSql.Native.commit(trx_state)
+            after
+              EctoLibSql.disconnect([], state)
+            end
           end)
         end)
 
@@ -188,39 +191,44 @@ defmodule EctoLibSql.PoolLoadTest do
     test "connection recovers after query error", %{test_db: test_db} do
       {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
 
-      # Successful insert
-      {:ok, _query, _result, state} =
-        EctoLibSql.handle_execute(
-          "INSERT INTO test_data (value) VALUES (?)",
-          ["before"],
-          [],
-          state
-        )
+      try do
+        # Successful insert
+        {:ok, _query, _result, state} =
+          EctoLibSql.handle_execute(
+            "INSERT INTO test_data (value) VALUES (?)",
+            ["before"],
+            [],
+            state
+          )
 
-      # Force error (syntax)
-      error_result = EctoLibSql.handle_execute("INVALID SQL", [], [], state)
-      assert {:error, _reason, state} = error_result
+        # Force error (syntax)
+        error_result = EctoLibSql.handle_execute("INVALID SQL", [], [], state)
+        assert {:error, _reason, ^state} = error_result
 
-      # Connection should still work
-      {:ok, _query, _result, state} =
-        EctoLibSql.handle_execute(
-          "INSERT INTO test_data (value) VALUES (?)",
-          ["after"],
-          [],
-          state
-        )
-
-      EctoLibSql.disconnect([], state)
+        # Connection should still work
+        # (state variable intentionally rebound with new connection state)
+        {:ok, _query, _result, state} =
+          EctoLibSql.handle_execute(
+            "INSERT INTO test_data (value) VALUES (?)",
+            ["after"],
+            [],
+            state
+          )
+      after
+        EctoLibSql.disconnect([], state)
+      end
 
       # Verify both successful inserts
       {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
 
-      {:ok, _query, result, _state} =
-        EctoLibSql.handle_execute("SELECT COUNT(*) FROM test_data", [], [], state)
+      try do
+        {:ok, _query, result, _state} =
+          EctoLibSql.handle_execute("SELECT COUNT(*) FROM test_data", [], [], state)
 
-      EctoLibSql.disconnect([], state)
-
-      assert [[2]] = result.rows
+        assert [[2]] = result.rows
+      after
+        EctoLibSql.disconnect([], state)
+      end
     end
 
     @tag :slow
@@ -231,29 +239,29 @@ defmodule EctoLibSql.PoolLoadTest do
           Task.async(fn ->
             {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
 
-            # Insert before error
-            {:ok, _query, _result, state} =
-              EctoLibSql.handle_execute(
-                "INSERT INTO test_data (value) VALUES (?)",
-                ["before_#{i}"],
-                [],
-                state
-              )
+            try do
+              # Insert before error
+              {:ok, _query, _result, state} =
+                EctoLibSql.handle_execute(
+                  "INSERT INTO test_data (value) VALUES (?)",
+                  ["before_#{i}"],
+                  [],
+                  state
+                )
 
-            # Cause error
-            EctoLibSql.handle_execute("BAD SQL", [], [], state)
+              # Cause error
+              EctoLibSql.handle_execute("BAD SQL", [], [], state)
 
-            # Recovery insert
-            result =
+              # Recovery insert
               EctoLibSql.handle_execute(
                 "INSERT INTO test_data (value) VALUES (?)",
                 ["after_#{i}"],
                 [],
                 state
               )
-
-            EctoLibSql.disconnect([], state)
-            result
+            after
+              EctoLibSql.disconnect([], state)
+            end
           end)
         end)
 
@@ -286,23 +294,25 @@ defmodule EctoLibSql.PoolLoadTest do
           Task.async(fn ->
             {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
 
-            {:ok, stmt} =
-              EctoLibSql.Native.prepare(
-                state,
-                "INSERT INTO test_data (value) VALUES (?)"
-              )
+            try do
+              {:ok, stmt} =
+                EctoLibSql.Native.prepare(
+                  state,
+                  "INSERT INTO test_data (value) VALUES (?)"
+                )
 
-            {:ok, _} =
-              EctoLibSql.Native.execute_stmt(
-                state,
-                stmt,
-                "INSERT INTO test_data (value) VALUES (?)",
-                ["prep_#{i}"]
-              )
+              {:ok, _} =
+                EctoLibSql.Native.execute_stmt(
+                  state,
+                  stmt,
+                  "INSERT INTO test_data (value) VALUES (?)",
+                  ["prep_#{i}"]
+                )
 
-            :ok = EctoLibSql.Native.close_stmt(stmt)
-
-            EctoLibSql.disconnect([], state)
+              :ok = EctoLibSql.Native.close_stmt(stmt)
+            after
+              EctoLibSql.disconnect([], state)
+            end
           end)
         end)
 
@@ -329,23 +339,24 @@ defmodule EctoLibSql.PoolLoadTest do
           Task.async(fn ->
             {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
 
-            {:ok, trx_state} = EctoLibSql.Native.begin(state)
+            try do
+              {:ok, trx_state} = EctoLibSql.Native.begin(state)
 
-            {:ok, _query, _result, trx_state} =
-              EctoLibSql.handle_execute(
-                "INSERT INTO test_data (value) VALUES (?)",
-                ["iso_#{i}"],
-                [],
-                trx_state
-              )
+              {:ok, _query, _result, trx_state} =
+                EctoLibSql.handle_execute(
+                  "INSERT INTO test_data (value) VALUES (?)",
+                  ["iso_#{i}"],
+                  [],
+                  trx_state
+                )
 
-            # Slight delay to increase overlap
-            Process.sleep(10)
+              # Slight delay to increase overlap
+              Process.sleep(10)
 
-            result = EctoLibSql.Native.commit(trx_state)
-
-            EctoLibSql.disconnect([], state)
-            result
+              EctoLibSql.Native.commit(trx_state)
+            after
+              EctoLibSql.disconnect([], state)
+            end
           end)
         end)
 

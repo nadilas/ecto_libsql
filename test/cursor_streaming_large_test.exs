@@ -357,6 +357,9 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
 
       {:halt, result, _state} ->
         result.num_rows
+
+      {:error, reason, _state} ->
+        flunk("Cursor fetch failed with error: #{inspect(reason)}")
     end
   end
 
@@ -367,6 +370,9 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
 
       {:halt, result, _state} ->
         result.num_rows
+
+      {:error, reason, _state} ->
+        flunk("Cursor fetch failed with error: #{inspect(reason)}")
     end
   end
 

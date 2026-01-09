@@ -40,11 +40,11 @@ impl Drop for TestDbGuard {
     fn drop(&mut self) {
         // Remove main database file
         let _ = fs::remove_file(&self.db_path);
-        
+
         // Remove WAL (Write-Ahead Log) file
         let wal_path = format!("{}-wal", self.db_path.display());
         let _ = fs::remove_file(&wal_path);
-        
+
         // Remove SHM (Shared Memory) file
         let shm_path = format!("{}-shm", self.db_path.display());
         let _ = fs::remove_file(&shm_path);
@@ -65,8 +65,11 @@ fn setup_test_db() -> PathBuf {
 async fn test_not_null_constraint_violation() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute(
@@ -94,8 +97,11 @@ async fn test_not_null_constraint_violation() {
 async fn test_unique_constraint_violation() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute(
@@ -137,8 +143,11 @@ async fn test_unique_constraint_violation() {
 async fn test_primary_key_constraint_violation() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)", ())
@@ -171,8 +180,11 @@ async fn test_primary_key_constraint_violation() {
 async fn test_check_constraint_violation() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute(
@@ -212,8 +224,11 @@ async fn test_check_constraint_violation() {
 async fn test_invalid_sql_syntax() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     // Invalid SQL should return error, not panic
@@ -228,8 +243,11 @@ async fn test_invalid_sql_syntax() {
 async fn test_nonexistent_table() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     // Query non-existent table should return error, not panic
@@ -242,8 +260,11 @@ async fn test_nonexistent_table() {
 async fn test_nonexistent_column() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)", ())
@@ -260,8 +281,11 @@ async fn test_nonexistent_column() {
 async fn test_malformed_sql() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     // Incomplete SQL
@@ -278,8 +302,11 @@ async fn test_malformed_sql() {
 async fn test_parameter_count_mismatch_missing() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT, email TEXT)", ())
@@ -303,8 +330,11 @@ async fn test_parameter_count_mismatch_missing() {
 async fn test_parameter_count_mismatch_excess() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -331,8 +361,11 @@ async fn test_parameter_count_mismatch_excess() {
 async fn test_type_coercion_integer_to_text() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -347,10 +380,10 @@ async fn test_type_coercion_integer_to_text() {
         )
         .await;
 
-    // SQLite permits this due to type affinity, but should not panic
+    // SQLite permits this due to type affinity - verify insert completed successfully
     assert!(
-        result.is_ok() || result.is_err(),
-        "Should handle type coercion without panic"
+        result.is_ok(),
+        "Should accept integer value for TEXT column due to type affinity without panic"
     );
 }
 
@@ -362,8 +395,11 @@ async fn test_type_coercion_integer_to_text() {
 async fn test_double_commit() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER)", ())
@@ -392,8 +428,11 @@ async fn test_double_commit() {
 async fn test_double_rollback() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER)", ())
@@ -422,8 +461,11 @@ async fn test_double_rollback() {
 async fn test_commit_after_rollback() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER)", ())
@@ -449,8 +491,11 @@ async fn test_commit_after_rollback() {
 async fn test_query_after_rollback() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER)", ())
@@ -481,8 +526,11 @@ async fn test_query_after_rollback() {
 async fn test_prepare_invalid_sql() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     // Prepare invalid SQL - should return error, not panic
@@ -497,8 +545,11 @@ async fn test_prepare_invalid_sql() {
 async fn test_prepared_statement_with_parameter_mismatch() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -560,9 +611,9 @@ async fn test_create_db_invalid_permissions() {
 async fn test_database_persistence_and_reopen() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
+
     let db_path_str = db_path.to_str().unwrap();
-    
+
     // Create database, table, and insert data
     let db = Builder::new_local(db_path_str).build().await.unwrap();
     let conn = db.connect().unwrap();
@@ -596,7 +647,10 @@ async fn test_database_persistence_and_reopen() {
     let mut rows = conn2.query("SELECT COUNT(*) FROM users", ()).await.unwrap();
     let row = rows.next().await.unwrap().unwrap();
     let count = row.get::<i64>(0).unwrap();
-    assert_eq!(count, 1, "Persisted data should be readable after reopening");
+    assert_eq!(
+        count, 1,
+        "Persisted data should be readable after reopening"
+    );
 }
 
 // ============================================================================
@@ -607,8 +661,11 @@ async fn test_database_persistence_and_reopen() {
 async fn test_empty_sql_statement() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     // Empty SQL - should return error, not panic
@@ -621,8 +678,11 @@ async fn test_empty_sql_statement() {
 async fn test_whitespace_only_sql() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     // Whitespace-only SQL - should return error, not panic
@@ -635,8 +695,11 @@ async fn test_whitespace_only_sql() {
 async fn test_very_long_sql_query() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER)", ())
@@ -658,8 +721,11 @@ async fn test_very_long_sql_query() {
 async fn test_unicode_in_sql() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -696,8 +762,11 @@ async fn test_unicode_in_sql() {
 async fn test_sql_injection_attempt() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())

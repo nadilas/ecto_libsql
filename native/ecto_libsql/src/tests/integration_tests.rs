@@ -32,11 +32,11 @@ impl Drop for TestDbGuard {
     fn drop(&mut self) {
         // Remove main database file
         let _ = fs::remove_file(&self.db_path);
-        
+
         // Remove WAL (Write-Ahead Log) file
         let wal_path = format!("{}-wal", self.db_path.display());
         let _ = fs::remove_file(&wal_path);
-        
+
         // Remove SHM (Shared Memory) file
         let shm_path = format!("{}-shm", self.db_path.display());
         let _ = fs::remove_file(&shm_path);
@@ -71,8 +71,11 @@ async fn test_create_local_database() {
 async fn test_parameter_binding_with_integers() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, age INTEGER)", ())
@@ -107,8 +110,11 @@ async fn test_parameter_binding_with_integers() {
 async fn test_parameter_binding_with_floats() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE products (id INTEGER, price REAL)", ())
@@ -147,8 +153,11 @@ async fn test_parameter_binding_with_floats() {
 async fn test_parameter_binding_with_text() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -182,8 +191,11 @@ async fn test_parameter_binding_with_text() {
 async fn test_transaction_commit() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -210,8 +222,11 @@ async fn test_transaction_commit() {
 async fn test_transaction_rollback() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -238,8 +253,11 @@ async fn test_transaction_rollback() {
 async fn test_prepared_statement() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, name TEXT)", ())
@@ -283,8 +301,11 @@ async fn test_prepared_statement() {
 async fn test_blob_storage() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE files (id INTEGER, data BLOB)", ())
@@ -317,8 +338,11 @@ async fn test_blob_storage() {
 async fn test_null_values() {
     let db_path = setup_test_db();
     let _guard = TestDbGuard::new(db_path.clone());
-    
-    let db = Builder::new_local(db_path.to_str().unwrap()).build().await.unwrap();
+
+    let db = Builder::new_local(db_path.to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let conn = db.connect().unwrap();
 
     conn.execute("CREATE TABLE users (id INTEGER, email TEXT)", ())
