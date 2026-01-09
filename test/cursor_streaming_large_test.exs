@@ -323,19 +323,31 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
   # ============================================================================
 
   defp insert_rows(state, start_id, end_id, batch_id) do
-    Enum.reduce(start_id..end_id, state, fn id, acc_state ->
-      value = "value_#{id}_batch_#{batch_id}"
+    # Use a prepared statement to reduce overhead per insert
+    {:ok, stmt} =
+      EctoLibSql.Native.prepare(
+        state,
+        "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (?, ?, ?, ?)"
+      )
 
-      {:ok, _, _, new_state} =
-        EctoLibSql.handle_execute(
-          "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (?, ?, ?, ?)",
-          [id, batch_id, id - start_id + 1, value],
-          [],
-          acc_state
-        )
+    state =
+      Enum.reduce(start_id..end_id, state, fn id, acc_state ->
+        value = "value_#{id}_batch_#{batch_id}"
 
-      new_state
-    end)
+        {:ok, _changes} =
+          EctoLibSql.Native.execute_stmt(
+            acc_state,
+            stmt,
+            "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (?, ?, ?, ?)",
+            [id, batch_id, id - start_id + 1, value]
+          )
+
+        acc_state
+      end)
+
+    # Clean up prepared statement
+    :ok = EctoLibSql.Native.close_stmt(stmt)
+    state
   end
 
   defp fetch_all_rows(state, cursor, query, opts) do
@@ -359,24 +371,39 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
   end
 
   defp fetch_all_ids(state, cursor, query, opts) do
+    # Use accumulator to avoid O(n²) list concatenation
+    fetch_all_ids_acc(state, cursor, query, opts, [])
+    |> Enum.reverse()
+  end
+
+  defp fetch_all_ids_acc(state, cursor, query, opts, acc) do
     case EctoLibSql.handle_fetch(query, cursor, opts, state) do
       {:cont, result, next_state} ->
         ids = Enum.map(result.rows, fn [id] -> id end)
-        ids ++ fetch_all_ids(next_state, cursor, query, opts)
+        fetch_all_ids_acc(next_state, cursor, query, opts, Enum.reverse(ids) ++ acc)
 
       {:halt, result, _state} ->
-        Enum.map(result.rows, fn [id] -> id end)
+        ids = Enum.map(result.rows, fn [id] -> id end)
+        Enum.reverse(ids) ++ acc
     end
   end
 
   # Generic helper to collect all rows from a cursor by repeatedly fetching batches
+  # Uses accumulator to avoid O(n²) list concatenation with ++
   defp fetch_all_cursor_rows(state, cursor, query, opts) do
+    fetch_all_cursor_rows_acc(state, cursor, query, opts, [])
+    |> Enum.reverse()
+  end
+
+  defp fetch_all_cursor_rows_acc(state, cursor, query, opts, acc) do
     case EctoLibSql.handle_fetch(query, cursor, opts, state) do
       {:cont, result, next_state} ->
-        result.rows ++ fetch_all_cursor_rows(next_state, cursor, query, opts)
+        # Prepend reversed batch to accumulator to maintain order
+        new_acc = Enum.reverse(result.rows) ++ acc
+        fetch_all_cursor_rows_acc(next_state, cursor, query, opts, new_acc)
 
       {:halt, result, _state} ->
-        result.rows
+        Enum.reverse(result.rows) ++ acc
     end
   end
 
