@@ -159,7 +159,14 @@ defmodule EctoLibSql.PoolLoadTest do
               # Hold transaction
               Process.sleep(50)
 
-              EctoLibSql.Native.commit(trx_state)
+              # Explicitly handle commit result to catch errors
+              case EctoLibSql.Native.commit(trx_state) do
+                {:ok, _committed_state} ->
+                  {:ok, :committed}
+
+                {:error, reason} ->
+                  {:error, {:commit_failed, reason}}
+              end
             after
               EctoLibSql.disconnect([], state)
             end
@@ -168,9 +175,18 @@ defmodule EctoLibSql.PoolLoadTest do
 
       results = Task.await_many(tasks, 30_000)
 
-      # All should succeed
+      # All commits should succeed; fail test if any error occurred
       Enum.each(results, fn result ->
-        assert {:ok, _state} = result
+        case result do
+          {:ok, :committed} ->
+            :ok
+
+          {:error, {:commit_failed, reason}} ->
+            flunk("Transaction commit failed: #{inspect(reason)}")
+
+          other ->
+            flunk("Unexpected result from concurrent transaction: #{inspect(other)}")
+        end
       end)
 
       # Verify all inserts
@@ -206,8 +222,7 @@ defmodule EctoLibSql.PoolLoadTest do
         assert {:error, _reason, ^state} = error_result
 
         # Connection should still work
-        # (state variable intentionally rebound with new connection state)
-        {:ok, _query, _result, state} =
+        {:ok, _query, _result, ^state} =
           EctoLibSql.handle_execute(
             "INSERT INTO test_data (value) VALUES (?)",
             ["after"],
