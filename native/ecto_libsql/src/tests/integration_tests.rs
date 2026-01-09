@@ -238,7 +238,7 @@ async fn test_prepared_statement() {
     let first_row = result_rows_1.next().await.unwrap().unwrap();
     assert_eq!(first_row.get::<String>(0).unwrap(), "Alice");
 
-    // Test prepared statement with second parameter (prepare again, mimicking NIF behavior)
+    // Test prepared statement with second parameter (prepare again, mimicking NIF behaviour)
     let stmt2 = conn
         .prepare("SELECT name FROM users WHERE id = ?1")
         .await

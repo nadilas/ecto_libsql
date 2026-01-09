@@ -731,7 +731,7 @@ defmodule EctoLibSql.PreparedStatementTest do
       end)
 
       # No assertions on memory (platform-dependent)
-      # This test documents expected behavior and can catch memory leaks in manual testing
+      # This test documents expected behaviour and can catch memory leaks in manual testing
 
       :ok = Native.close_stmt(stmt_id)
     end

@@ -1,6 +1,6 @@
 defmodule EctoLibSql.SavepointReplicationTest do
   @moduledoc """
-  Tests for savepoint behavior when used with replication/remote sync.
+  Tests for savepoint behaviour when used with replication/remote sync.
 
   Focused on critical integration scenarios:
   1. Savepoints work correctly in replica mode with sync enabled
@@ -62,7 +62,10 @@ defmodule EctoLibSql.SavepointReplicationTest do
   end
 
   describe "savepoints in replica mode with sync" do
-    test "basic savepoint operation works with replica sync enabled", %{state: state, table: table} do
+    test "basic savepoint operation works with replica sync enabled", %{
+      state: state,
+      table: table
+    } do
       {:ok, trx_state} = EctoLibSql.Native.begin(state)
 
       # Create savepoint
@@ -82,17 +85,21 @@ defmodule EctoLibSql.SavepointReplicationTest do
       {:ok, _state} = EctoLibSql.Native.commit(trx_state)
 
       # Verify data persisted
-      {:ok, _query, result, _state} = EctoLibSql.handle_execute(
-        "SELECT COUNT(*) FROM #{table}",
-        [],
-        [],
-        state
-      )
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute(
+          "SELECT COUNT(*) FROM #{table}",
+          [],
+          [],
+          state
+        )
 
       assert [[1]] = result.rows
     end
 
-    test "savepoint rollback with remote sync preserves outer transaction", %{state: state, table: table} do
+    test "savepoint rollback with remote sync preserves outer transaction", %{
+      state: state,
+      table: table
+    } do
       {:ok, trx_state} = EctoLibSql.Native.begin(state)
 
       # Outer transaction: insert Alice
@@ -121,12 +128,13 @@ defmodule EctoLibSql.SavepointReplicationTest do
       {:ok, _state} = EctoLibSql.Native.commit(trx_state)
 
       # Only Alice should exist
-      {:ok, _query, result, _state} = EctoLibSql.handle_execute(
-        "SELECT name FROM #{table} ORDER BY name",
-        [],
-        [],
-        state
-      )
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute(
+          "SELECT name FROM #{table} ORDER BY name",
+          [],
+          [],
+          state
+        )
 
       assert result.rows == [["Alice"]]
     end
@@ -172,19 +180,23 @@ defmodule EctoLibSql.SavepointReplicationTest do
       {:ok, _state} = EctoLibSql.Native.commit(trx_state)
 
       # Alice and Bob should exist
-      {:ok, _query, result, _state} = EctoLibSql.handle_execute(
-        "SELECT COUNT(*) FROM #{table}",
-        [],
-        [],
-        state
-      )
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute(
+          "SELECT COUNT(*) FROM #{table}",
+          [],
+          [],
+          state
+        )
 
       assert [[2]] = result.rows
     end
   end
 
   describe "savepoint error recovery with remote sync" do
-    test "savepoint enables error recovery in replicated transactions", %{state: state, table: table} do
+    test "savepoint enables error recovery in replicated transactions", %{
+      state: state,
+      table: table
+    } do
       # Insert a row with specific ID for constraint violation test
       {:ok, _query, _result, state} =
         EctoLibSql.handle_execute(
@@ -226,12 +238,13 @@ defmodule EctoLibSql.SavepointReplicationTest do
       {:ok, _state} = EctoLibSql.Native.commit(trx_state)
 
       # Both original and new should exist
-      {:ok, _query, result, _state} = EctoLibSql.handle_execute(
-        "SELECT COUNT(*) FROM #{table}",
-        [],
-        [],
-        state
-      )
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute(
+          "SELECT COUNT(*) FROM #{table}",
+          [],
+          [],
+          state
+        )
 
       assert [[2]] = result.rows
     end

@@ -1,6 +1,6 @@
 defmodule EctoLibSql.PoolLoadTest do
   @moduledoc """
-  Tests for concurrent connection behavior under load.
+  Tests for concurrent connection behaviour under load.
 
   Critical scenarios:
   1. Multiple concurrent independent connections
@@ -9,7 +9,7 @@ defmodule EctoLibSql.PoolLoadTest do
   4. Resource cleanup under concurrent load
   5. Transaction isolation under concurrent load
 
-  Note: Tests create separate connections (not pooled) to simulate 
+  Note: Tests create separate connections (not pooled) to simulate
   concurrent access patterns and verify robustness.
   """
   use ExUnit.Case
