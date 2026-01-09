@@ -15,8 +15,8 @@
 // Allow unwrap() in tests for cleaner test code - see CLAUDE.md "Test Code Exception"
 #![allow(clippy::unwrap_used)]
 
-use libsql::{Builder, Value};
 use super::test_utils::{setup_test_db_with_prefix, TestDbGuard};
+use libsql::{Builder, Value};
 
 // ============================================================================
 // CONSTRAINT VIOLATION TESTS

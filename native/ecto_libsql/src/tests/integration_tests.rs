@@ -7,8 +7,8 @@
 // Allow unwrap() in tests for cleaner test code - see CLAUDE.md "Test Code Exception"
 #![allow(clippy::unwrap_used)]
 
-use libsql::{Builder, Value};
 use super::test_utils::{setup_test_db, TestDbGuard};
+use libsql::{Builder, Value};
 
 #[tokio::test]
 async fn test_create_local_database() {
