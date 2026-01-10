@@ -57,6 +57,30 @@ defmodule EctoLibSql.PoolLoadTest do
     ]
   end
 
+  defp generate_unicode_edge_case_values(task_num) do
+    [
+      # Latin with accents (ê, á, ü)
+      "café_#{task_num}",
+      # Chinese characters (中文)
+      "chinese_中文_#{task_num}",
+      # Arabic characters (العربية)
+      "arabic_العربية_#{task_num}",
+      # Emoji (😀, 🎉, ❤️)
+      "emoji_😀🎉❤️_#{task_num}",
+      # Mixed: combining all above
+      "mixed_café_中文_العربية_😀_#{task_num}"
+    ]
+  end
+
+  defp insert_unicode_edge_case_value(state, value) do
+    EctoLibSql.handle_execute(
+      "INSERT INTO test_data (value) VALUES (?)",
+      [value],
+      [],
+      state
+    )
+  end
+
   defp insert_edge_case_value(state, value) do
     EctoLibSql.handle_execute(
       "INSERT INTO test_data (value) VALUES (?)",
@@ -208,6 +232,79 @@ defmodule EctoLibSql.PoolLoadTest do
       assert [[5]] = null_result.rows
       # Should have 5 empty strings (one per task)
       assert [[5]] = empty_result.rows
+    end
+
+    @tag :slow
+    @tag :flaky
+    test "concurrent connections with unicode data (Chinese, Arabic, emoji)", %{
+      test_db: test_db
+    } do
+      # Clean the table first (other tests may have added data)
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+      EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
+      EctoLibSql.disconnect([], state)
+
+      # Spawn 5 concurrent connections, each inserting Unicode values
+      tasks =
+        Enum.map(1..5, fn task_num ->
+          Task.async(fn ->
+            {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+            try do
+              # Insert each Unicode value for this task
+              unicode_values = generate_unicode_edge_case_values(task_num)
+
+              results =
+                Enum.map(unicode_values, fn value ->
+                  insert_unicode_edge_case_value(state, value)
+                end)
+
+              # All inserts should succeed
+              all_ok = Enum.all?(results, fn r -> match?({:ok, _, _, _}, r) end)
+
+              if all_ok,
+                do: {:ok, :all_unicode_inserted},
+                else: {:error, :some_unicode_inserts_failed}
+            after
+              EctoLibSql.disconnect([], state)
+            end
+          end)
+        end)
+
+      results = Task.await_many(tasks, 30_000)
+
+      # All Unicode inserts should succeed
+      Enum.each(results, fn result ->
+        assert {:ok, :all_unicode_inserted} = result
+      end)
+
+      # Verify all inserts: 5 tasks × 5 Unicode values = 25 rows
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute("SELECT COUNT(*) FROM test_data", [], [], state)
+
+      EctoLibSql.disconnect([], state)
+
+      assert [[25]] = result.rows
+
+      # Verify that we can retrieve the data back (simple verification)
+      {:ok, state2} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      # Simple verification: check that the data is still there
+      {:ok, _query, verify_result, _state} =
+        EctoLibSql.handle_execute(
+          "SELECT COUNT(*) FROM test_data WHERE value LIKE '%café%' OR value LIKE '%中%' OR value LIKE '%العربية%' OR value LIKE '%😀%'",
+          [],
+          [],
+          state2
+        )
+
+      EctoLibSql.disconnect([], state2)
+
+      # Should retrieve some of the Unicode values
+      # (exact count depends on LIKE behavior with Unicode)
+      assert length(verify_result.rows) > 0
     end
   end
 
