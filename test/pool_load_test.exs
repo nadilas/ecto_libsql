@@ -869,4 +869,503 @@ defmodule EctoLibSql.PoolLoadTest do
       assert [[4]] = null_result.rows
     end
   end
+
+  describe "concurrent load edge cases" do
+    @tag :slow
+    @tag :flaky
+    test "concurrent load with only NULL values", %{test_db: test_db} do
+      tasks =
+        Enum.map(1..10, fn _i ->
+          Task.async(fn ->
+            {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+            try do
+              EctoLibSql.handle_execute(
+                "INSERT INTO test_data (value, duration) VALUES (?, ?)",
+                [nil, nil],
+                [],
+                state
+              )
+            after
+              EctoLibSql.disconnect([], state)
+            end
+          end)
+        end)
+
+      results = Task.await_many(tasks, 30_000)
+
+      # All should succeed
+      Enum.each(results, fn result ->
+        assert {:ok, _query, _result, _state} = result
+      end)
+
+      # Verify all NULL inserts
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute(
+          "SELECT COUNT(*) FROM test_data WHERE value IS NULL AND duration IS NULL",
+          [],
+          [],
+          state
+        )
+
+      EctoLibSql.disconnect([], state)
+      assert [[10]] = result.rows
+    end
+
+    @tag :slow
+    @tag :flaky
+    test "concurrent load with only empty strings", %{test_db: test_db} do
+      tasks =
+        Enum.map(1..10, fn _i ->
+          Task.async(fn ->
+            {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+            try do
+              EctoLibSql.handle_execute(
+                "INSERT INTO test_data (value) VALUES (?)",
+                [""],
+                [],
+                state
+              )
+            after
+              EctoLibSql.disconnect([], state)
+            end
+          end)
+        end)
+
+      results = Task.await_many(tasks, 30_000)
+
+      Enum.each(results, fn result ->
+        assert {:ok, _query, _result, _state} = result
+      end)
+
+      # Verify empty strings (not NULL)
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _query, empty_result, _state} =
+        EctoLibSql.handle_execute(
+          "SELECT COUNT(*) FROM test_data WHERE value = ''",
+          [],
+          [],
+          state
+        )
+
+      {:ok, _query, null_result, _state} =
+        EctoLibSql.handle_execute(
+          "SELECT COUNT(*) FROM test_data WHERE value IS NULL",
+          [],
+          [],
+          state
+        )
+
+      EctoLibSql.disconnect([], state)
+
+      assert [[10]] = empty_result.rows
+      assert [[0]] = null_result.rows
+    end
+
+    @tag :slow
+    @tag :flaky
+    test "concurrent load large dataset (100 rows per connection)", %{test_db: test_db} do
+      tasks =
+        Enum.map(1..5, fn task_num ->
+          Task.async(fn ->
+            {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 60_000)
+
+            try do
+              # Insert 100 rows per task
+              results =
+                Enum.map(1..100, fn row_num ->
+                  EctoLibSql.handle_execute(
+                    "INSERT INTO test_data (value, duration) VALUES (?, ?)",
+                    ["task_#{task_num}_row_#{row_num}", task_num * 100 + row_num],
+                    [],
+                    state
+                  )
+                end)
+
+              all_ok = Enum.all?(results, fn r -> match?({:ok, _, _, _}, r) end)
+              if all_ok, do: {:ok, 100}, else: {:error, :some_failed}
+            after
+              EctoLibSql.disconnect([], state)
+            end
+          end)
+        end)
+
+      results = Task.await_many(tasks, 60_000)
+
+      # All tasks should succeed
+      Enum.each(results, fn result ->
+        assert {:ok, 100} = result
+      end)
+
+      # Verify total row count: 5 tasks × 100 rows = 500
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute("SELECT COUNT(*) FROM test_data", [], [], state)
+
+      EctoLibSql.disconnect([], state)
+      assert [[500]] = result.rows
+    end
+
+    @tag :slow
+    @tag :flaky
+    test "concurrent load with type conversion (ints, floats, strings)", %{test_db: test_db} do
+      # Add columns for different types
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _query, _result, _state} =
+        EctoLibSql.handle_execute(
+          "CREATE TABLE typed_data (id INTEGER PRIMARY KEY AUTOINCREMENT, int_val INTEGER, float_val REAL, text_val TEXT, timestamp_val TEXT)",
+          [],
+          [],
+          state
+        )
+
+      EctoLibSql.disconnect([], state)
+
+      tasks =
+        Enum.map(1..5, fn task_num ->
+          Task.async(fn ->
+            {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+            try do
+              now = DateTime.utc_now() |> DateTime.to_iso8601()
+
+              results = [
+                # Integer values
+                EctoLibSql.handle_execute(
+                  "INSERT INTO typed_data (int_val, float_val, text_val, timestamp_val) VALUES (?, ?, ?, ?)",
+                  [task_num * 1000, task_num * 1.5, "text_#{task_num}", now],
+                  [],
+                  state
+                ),
+                # Negative integer
+                EctoLibSql.handle_execute(
+                  "INSERT INTO typed_data (int_val, float_val, text_val, timestamp_val) VALUES (?, ?, ?, ?)",
+                  [-task_num, -task_num * 0.5, "negative_#{task_num}", now],
+                  [],
+                  state
+                ),
+                # Zero values
+                EctoLibSql.handle_execute(
+                  "INSERT INTO typed_data (int_val, float_val, text_val, timestamp_val) VALUES (?, ?, ?, ?)",
+                  [0, 0.0, "", now],
+                  [],
+                  state
+                ),
+                # Large integer
+                EctoLibSql.handle_execute(
+                  "INSERT INTO typed_data (int_val, float_val, text_val, timestamp_val) VALUES (?, ?, ?, ?)",
+                  [9_223_372_036_854_775_807, 1.7976931348623157e308, "max_#{task_num}", now],
+                  [],
+                  state
+                )
+              ]
+
+              all_ok = Enum.all?(results, fn r -> match?({:ok, _, _, _}, r) end)
+              if all_ok, do: {:ok, :types_inserted}, else: {:error, :type_insert_failed}
+            after
+              EctoLibSql.disconnect([], state)
+            end
+          end)
+        end)
+
+      results = Task.await_many(tasks, 30_000)
+
+      Enum.each(results, fn result ->
+        assert {:ok, :types_inserted} = result
+      end)
+
+      # Verify type preservation
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute(
+          "SELECT int_val, float_val, text_val FROM typed_data WHERE int_val = 0 LIMIT 1",
+          [],
+          [],
+          state
+        )
+
+      EctoLibSql.disconnect([], state)
+
+      [[int_val, float_val, text_val]] = result.rows
+      assert int_val == 0
+      assert float_val == 0.0
+      assert text_val == ""
+    end
+  end
+
+  describe "transaction rollback under load" do
+    @tag :slow
+    @tag :flaky
+    test "concurrent transaction rollback leaves no data", %{test_db: test_db} do
+      # Clear any existing data
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+      EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
+      EctoLibSql.disconnect([], state)
+
+      tasks =
+        Enum.map(1..5, fn task_num ->
+          Task.async(fn ->
+            {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+            try do
+              # Begin transaction
+              {:ok, trx_state} = EctoLibSql.Native.begin(state)
+
+              # Insert some data
+              {:ok, _query, _result, trx_state} =
+                EctoLibSql.handle_execute(
+                  "INSERT INTO test_data (value) VALUES (?)",
+                  ["rollback_test_#{task_num}"],
+                  [],
+                  trx_state
+                )
+
+              # Always rollback - data should not persist
+              case EctoLibSql.Native.rollback(trx_state) do
+                {:ok, _state} ->
+                  {:ok, :rolled_back}
+
+                {:error, reason} ->
+                  {:error, {:rollback_failed, reason}}
+              end
+            after
+              EctoLibSql.disconnect([], state)
+            end
+          end)
+        end)
+
+      results = Task.await_many(tasks, 30_000)
+
+      # All rollbacks should succeed
+      Enum.each(results, fn result ->
+        assert {:ok, :rolled_back} = result
+      end)
+
+      # Verify no data persisted
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute("SELECT COUNT(*) FROM test_data", [], [], state)
+
+      EctoLibSql.disconnect([], state)
+
+      assert [[0]] = result.rows
+    end
+
+    @tag :slow
+    @tag :flaky
+    test "mixed commit and rollback transactions maintain consistency", %{test_db: test_db} do
+      # Clear any existing data
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+      EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
+      EctoLibSql.disconnect([], state)
+
+      # Even tasks commit, odd tasks rollback
+      tasks =
+        Enum.map(1..10, fn task_num ->
+          Task.async(fn ->
+            {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+            try do
+              {:ok, trx_state} = EctoLibSql.Native.begin(state)
+
+              {:ok, _query, _result, trx_state} =
+                EctoLibSql.handle_execute(
+                  "INSERT INTO test_data (value) VALUES (?)",
+                  ["task_#{task_num}"],
+                  [],
+                  trx_state
+                )
+
+              Process.sleep(5)
+
+              if rem(task_num, 2) == 0 do
+                # Even tasks commit
+                case EctoLibSql.Native.commit(trx_state) do
+                  {:ok, _state} -> {:ok, :committed}
+                  {:error, reason} -> {:error, {:commit_failed, reason}}
+                end
+              else
+                # Odd tasks rollback
+                case EctoLibSql.Native.rollback(trx_state) do
+                  {:ok, _state} -> {:ok, :rolled_back}
+                  {:error, reason} -> {:error, {:rollback_failed, reason}}
+                end
+              end
+            after
+              EctoLibSql.disconnect([], state)
+            end
+          end)
+        end)
+
+      results = Task.await_many(tasks, 30_000)
+
+      # Count commits and rollbacks
+      commits = Enum.count(results, fn r -> r == {:ok, :committed} end)
+      rollbacks = Enum.count(results, fn r -> r == {:ok, :rolled_back} end)
+
+      assert commits == 5, "Should have 5 committed transactions"
+      assert rollbacks == 5, "Should have 5 rolled back transactions"
+
+      # Verify only committed data exists (5 rows)
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute("SELECT COUNT(*) FROM test_data", [], [], state)
+
+      EctoLibSql.disconnect([], state)
+
+      assert [[5]] = result.rows
+    end
+
+    @tag :slow
+    @tag :flaky
+    test "transaction rollback after intentional constraint violation", %{test_db: test_db} do
+      # Create table with unique constraint
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _query, _result, _state} =
+        EctoLibSql.handle_execute(
+          "CREATE TABLE unique_test (id INTEGER PRIMARY KEY, unique_val TEXT UNIQUE)",
+          [],
+          [],
+          state
+        )
+
+      # Insert initial row
+      {:ok, _query, _result, _state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO unique_test (unique_val) VALUES (?)",
+          ["existing_value"],
+          [],
+          state
+        )
+
+      EctoLibSql.disconnect([], state)
+
+      tasks =
+        Enum.map(1..5, fn task_num ->
+          Task.async(fn ->
+            {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+            try do
+              {:ok, trx_state} = EctoLibSql.Native.begin(state)
+
+              # Insert valid row
+              {:ok, _query, _result, trx_state} =
+                EctoLibSql.handle_execute(
+                  "INSERT INTO unique_test (unique_val) VALUES (?)",
+                  ["task_#{task_num}_valid"],
+                  [],
+                  trx_state
+                )
+
+              # Try to insert duplicate - should fail
+              result =
+                EctoLibSql.handle_execute(
+                  "INSERT INTO unique_test (unique_val) VALUES (?)",
+                  ["existing_value"],
+                  [],
+                  trx_state
+                )
+
+              case result do
+                {:error, _query, _reason, trx_state} ->
+                  # Expected: constraint violation
+                  EctoLibSql.Native.rollback(trx_state)
+                  {:ok, :correctly_rolled_back}
+
+                {:ok, _query, _result, trx_state} ->
+                  # Unexpected: should have failed
+                  EctoLibSql.Native.rollback(trx_state)
+                  {:error, :should_have_failed}
+              end
+            after
+              EctoLibSql.disconnect([], state)
+            end
+          end)
+        end)
+
+      results = Task.await_many(tasks, 30_000)
+
+      # All should have rolled back due to constraint violation
+      Enum.each(results, fn result ->
+        assert {:ok, :correctly_rolled_back} = result
+      end)
+
+      # Verify only original row exists
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute("SELECT COUNT(*) FROM unique_test", [], [], state)
+
+      EctoLibSql.disconnect([], state)
+
+      # Only the initial "existing_value" row should exist
+      assert [[1]] = result.rows
+    end
+
+    @tag :slow
+    @tag :flaky
+    test "concurrent transactions with edge-case data and rollback", %{test_db: test_db} do
+      # Clear table
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+      EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
+      EctoLibSql.disconnect([], state)
+
+      tasks =
+        Enum.map(1..5, fn task_num ->
+          Task.async(fn ->
+            {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+            try do
+              {:ok, trx_state} = EctoLibSql.Native.begin(state)
+
+              # Insert edge-case values in transaction
+              edge_values = generate_edge_case_values(task_num)
+
+              _insert_results =
+                Enum.map(edge_values, fn value ->
+                  insert_edge_case_value(trx_state, value)
+                end)
+
+              # Always rollback - edge-case data should not persist
+              case EctoLibSql.Native.rollback(trx_state) do
+                {:ok, _state} ->
+                  {:ok, :edge_cases_rolled_back}
+
+                {:error, reason} ->
+                  {:error, {:rollback_failed, reason}}
+              end
+            after
+              EctoLibSql.disconnect([], state)
+            end
+          end)
+        end)
+
+      results = Task.await_many(tasks, 30_000)
+
+      # All rollbacks should succeed
+      Enum.each(results, fn result ->
+        assert {:ok, :edge_cases_rolled_back} = result
+      end)
+
+      # Verify no data persisted
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _query, result, _state} =
+        EctoLibSql.handle_execute("SELECT COUNT(*) FROM test_data", [], [], state)
+
+      EctoLibSql.disconnect([], state)
+
+      assert [[0]] = result.rows
+    end
+  end
 end

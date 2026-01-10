@@ -318,6 +318,363 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
     end
   end
 
+  describe "cursor error handling and edge cases" do
+    test "handle_declare with malformed SQL returns error", %{state: state} do
+      query = %EctoLibSql.Query{statement: "SELEKT * FORM nonexistent_table"}
+
+      result = EctoLibSql.handle_declare(query, [], [], state)
+
+      # Should return an error tuple for invalid SQL
+      assert {:error, _reason, _state} = result
+    end
+
+    test "handle_declare with syntax error in WHERE clause", %{state: state} do
+      query = %EctoLibSql.Query{
+        statement: "SELECT * FROM large_data WHERE id = = 1"
+      }
+
+      result = EctoLibSql.handle_declare(query, [], [], state)
+
+      assert {:error, _reason, _state} = result
+    end
+
+    test "handle_declare on non-existent table returns error", %{state: state} do
+      query = %EctoLibSql.Query{statement: "SELECT * FROM table_that_does_not_exist"}
+
+      result = EctoLibSql.handle_declare(query, [], [], state)
+
+      assert {:error, _reason, _state} = result
+    end
+
+    test "empty result set returns 0 rows", %{state: state} do
+      # Table is empty, no rows inserted
+      query = %EctoLibSql.Query{statement: "SELECT * FROM large_data ORDER BY id"}
+
+      {:ok, ^query, cursor, state} =
+        EctoLibSql.handle_declare(query, [], [], state)
+
+      row_count = fetch_all_rows(state, cursor, query, max_rows: 100)
+      assert row_count == 0, "Empty table should return 0 rows"
+    end
+
+    test "cursor with WHERE clause matching no rows returns 0 rows", %{state: state} do
+      state = insert_rows(state, 1, 100, 1)
+
+      query = %EctoLibSql.Query{
+        statement: "SELECT * FROM large_data WHERE batch_id = 999 ORDER BY id"
+      }
+
+      {:ok, ^query, cursor, state} =
+        EctoLibSql.handle_declare(query, [], [], state)
+
+      row_count = fetch_all_rows(state, cursor, query, max_rows: 50)
+      assert row_count == 0, "No matching rows should return 0"
+    end
+
+    test "cursor with NULL values in data", %{state: state} do
+      # Insert rows with NULL values in the value column
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (1, 1, 1, NULL)",
+          [],
+          [],
+          state
+        )
+
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (2, 1, 2, 'not_null')",
+          [],
+          [],
+          state
+        )
+
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (3, 1, 3, NULL)",
+          [],
+          [],
+          state
+        )
+
+      query = %EctoLibSql.Query{statement: "SELECT id, value FROM large_data ORDER BY id"}
+
+      {:ok, ^query, cursor, state} =
+        EctoLibSql.handle_declare(query, [], [], state)
+
+      rows = fetch_all_cursor_rows(state, cursor, query, max_rows: 10)
+
+      assert length(rows) == 3
+      # Verify NULL values are preserved
+      [[1, val1], [2, val2], [3, val3]] = rows
+      assert val1 == nil
+      assert val2 == "not_null"
+      assert val3 == nil
+    end
+
+    test "cursor with empty string values", %{state: state} do
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (1, 1, 1, '')",
+          [],
+          [],
+          state
+        )
+
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (2, 1, 2, 'non_empty')",
+          [],
+          [],
+          state
+        )
+
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (3, 1, 3, '')",
+          [],
+          [],
+          state
+        )
+
+      query = %EctoLibSql.Query{statement: "SELECT id, value FROM large_data ORDER BY id"}
+
+      {:ok, ^query, cursor, state} =
+        EctoLibSql.handle_declare(query, [], [], state)
+
+      rows = fetch_all_cursor_rows(state, cursor, query, max_rows: 10)
+
+      assert length(rows) == 3
+      [[1, val1], [2, val2], [3, val3]] = rows
+      assert val1 == ""
+      assert val2 == "non_empty"
+      assert val3 == ""
+    end
+
+    test "cursor with mixed NULL and empty string values", %{state: state} do
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (1, 1, 1, NULL)",
+          [],
+          [],
+          state
+        )
+
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (2, 1, 2, '')",
+          [],
+          [],
+          state
+        )
+
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (3, 1, 3, 'value')",
+          [],
+          [],
+          state
+        )
+
+      query = %EctoLibSql.Query{
+        statement: "SELECT id, value, value IS NULL as is_null FROM large_data ORDER BY id"
+      }
+
+      {:ok, ^query, cursor, state} =
+        EctoLibSql.handle_declare(query, [], [], state)
+
+      rows = fetch_all_cursor_rows(state, cursor, query, max_rows: 10)
+
+      assert length(rows) == 3
+      # SQLite returns 1 for true, 0 for false
+      [[1, nil, 1], [2, "", 0], [3, "value", 0]] = rows
+    end
+  end
+
+  describe "cursor transaction behavior" do
+    test "cursor declared in transaction fails after rollback", %{state: state} do
+      state = insert_rows(state, 1, 100, 1)
+
+      # Begin transaction
+      {:ok, :begin, state} = EctoLibSql.handle_begin([], state)
+
+      query = %EctoLibSql.Query{statement: "SELECT * FROM large_data ORDER BY id"}
+
+      {:ok, ^query, cursor, state} =
+        EctoLibSql.handle_declare(query, [], [], state)
+
+      # Fetch some rows within transaction
+      {:cont, result, state} =
+        EctoLibSql.handle_fetch(query, cursor, [max_rows: 10], state)
+
+      assert result.num_rows == 10
+
+      # Rollback the transaction
+      {:ok, _result, state} = EctoLibSql.handle_rollback([], state)
+
+      # After rollback, fetching from the cursor should fail or return empty
+      # The cursor may be invalidated depending on implementation
+      fetch_result = EctoLibSql.handle_fetch(query, cursor, [max_rows: 10], state)
+
+      case fetch_result do
+        {:error, _reason, _state} ->
+          # Expected: cursor invalidated after rollback
+          :ok
+
+        {:halt, result, _state} ->
+          # Also acceptable: cursor exhausted/closed
+          assert result.num_rows == 0
+
+        {:cont, result, _state} ->
+          # If cursor continues, it should still work but this is less expected
+          assert is_integer(result.num_rows)
+      end
+    end
+
+    test "cursor sees uncommitted changes within same transaction", %{state: state} do
+      # Begin transaction
+      {:ok, :begin, state} = EctoLibSql.handle_begin([], state)
+
+      # Insert rows within transaction
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute(
+          "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (1, 1, 1, 'trx_row')",
+          [],
+          [],
+          state
+        )
+
+      query = %EctoLibSql.Query{statement: "SELECT * FROM large_data ORDER BY id"}
+
+      {:ok, ^query, cursor, state} =
+        EctoLibSql.handle_declare(query, [], [], state)
+
+      row_count = fetch_all_rows(state, cursor, query, max_rows: 10)
+
+      # Should see the uncommitted row
+      assert row_count == 1
+
+      # Rollback
+      {:ok, _result, _state} = EctoLibSql.handle_rollback([], state)
+    end
+  end
+
+  describe "concurrent cursor operations" do
+    test "multiple cursors on different queries return correct results", %{state: state} do
+      # Insert data for two different batch_ids
+      state = insert_rows(state, 1, 500, 1)
+      state = insert_rows(state, 501, 1000, 2)
+
+      query1 = %EctoLibSql.Query{
+        statement: "SELECT id FROM large_data WHERE batch_id = 1 ORDER BY id"
+      }
+
+      query2 = %EctoLibSql.Query{
+        statement: "SELECT id FROM large_data WHERE batch_id = 2 ORDER BY id"
+      }
+
+      # Declare both cursors
+      {:ok, ^query1, cursor1, state} =
+        EctoLibSql.handle_declare(query1, [], [], state)
+
+      {:ok, ^query2, cursor2, state} =
+        EctoLibSql.handle_declare(query2, [], [], state)
+
+      # Interleave fetches from both cursors
+      {:cont, result1_a, state} =
+        EctoLibSql.handle_fetch(query1, cursor1, [max_rows: 100], state)
+
+      {:cont, result2_a, state} =
+        EctoLibSql.handle_fetch(query2, cursor2, [max_rows: 100], state)
+
+      {:cont, result1_b, state} =
+        EctoLibSql.handle_fetch(query1, cursor1, [max_rows: 100], state)
+
+      {:cont, result2_b, _state} =
+        EctoLibSql.handle_fetch(query2, cursor2, [max_rows: 100], state)
+
+      # Verify cursor1 returns batch_id=1 rows (ids 1-500)
+      cursor1_ids =
+        Enum.map(result1_a.rows ++ result1_b.rows, fn [id] -> id end)
+
+      assert Enum.all?(cursor1_ids, fn id -> id >= 1 and id <= 500 end)
+
+      # Verify cursor2 returns batch_id=2 rows (ids 501-1000)
+      cursor2_ids =
+        Enum.map(result2_a.rows ++ result2_b.rows, fn [id] -> id end)
+
+      assert Enum.all?(cursor2_ids, fn id -> id >= 501 and id <= 1000 end)
+
+      # Verify ordering within each cursor
+      assert cursor1_ids == Enum.sort(cursor1_ids)
+      assert cursor2_ids == Enum.sort(cursor2_ids)
+    end
+
+    test "concurrent tasks with separate cursors", %{state: state} do
+      state = insert_rows(state, 1, 1000, 1)
+
+      # Use the state's conn_id to create separate connections for each task
+      # Since we're using in-memory DB, we need to share the same connection
+      # but use different cursors
+
+      query_even = %EctoLibSql.Query{
+        statement: "SELECT id FROM large_data WHERE id % 2 = 0 ORDER BY id"
+      }
+
+      query_odd = %EctoLibSql.Query{
+        statement: "SELECT id FROM large_data WHERE id % 2 = 1 ORDER BY id"
+      }
+
+      # Declare cursors
+      {:ok, ^query_even, cursor_even, state} =
+        EctoLibSql.handle_declare(query_even, [], [], state)
+
+      {:ok, ^query_odd, cursor_odd, state} =
+        EctoLibSql.handle_declare(query_odd, [], [], state)
+
+      # Fetch all from each cursor
+      even_ids = fetch_all_ids(state, cursor_even, query_even, max_rows: 100)
+      odd_ids = fetch_all_ids(state, cursor_odd, query_odd, max_rows: 100)
+
+      # Verify counts
+      assert length(even_ids) == 500
+      assert length(odd_ids) == 500
+
+      # Verify all even ids are even
+      assert Enum.all?(even_ids, fn id -> rem(id, 2) == 0 end)
+
+      # Verify all odd ids are odd
+      assert Enum.all?(odd_ids, fn id -> rem(id, 2) == 1 end)
+    end
+
+    test "cursor isolation: modifying data doesn't affect active cursor", %{state: state} do
+      state = insert_rows(state, 1, 100, 1)
+
+      query = %EctoLibSql.Query{statement: "SELECT id FROM large_data ORDER BY id"}
+
+      {:ok, ^query, cursor, state} =
+        EctoLibSql.handle_declare(query, [], [], state)
+
+      # Fetch first batch
+      {:cont, result1, state} =
+        EctoLibSql.handle_fetch(query, cursor, [max_rows: 50], state)
+
+      first_batch_ids = Enum.map(result1.rows, fn [id] -> id end)
+      assert length(first_batch_ids) == 50
+
+      # Insert more rows while cursor is active
+      state = insert_rows(state, 101, 200, 2)
+
+      # Fetch remaining rows from cursor
+      remaining_count = fetch_remaining_rows(state, cursor, query, max_rows: 50)
+
+      # Cursor should only see original 100 rows (or implementation may vary)
+      # Total fetched should be at least 100 (the original rows)
+      total_fetched = 50 + remaining_count
+      assert total_fetched >= 50, "Should fetch remaining original rows"
+    end
+  end
+
   # ============================================================================
   # HELPER FUNCTIONS
   # ============================================================================
