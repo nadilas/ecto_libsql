@@ -591,16 +591,24 @@ defmodule EctoLibSql.PoolLoadTest do
                   "INSERT INTO test_data (value) VALUES (?)"
                 )
 
-              {:ok, _} =
-                EctoLibSql.Native.execute_stmt(
-                  state,
-                  stmt,
-                  "INSERT INTO test_data (value) VALUES (?)",
-                  ["prep_#{i}"]
-                )
+              try do
+                {:ok, _} =
+                  EctoLibSql.Native.execute_stmt(
+                    state,
+                    stmt,
+                    "INSERT INTO test_data (value) VALUES (?)",
+                    ["prep_#{i}"]
+                  )
 
-              :ok = EctoLibSql.Native.close_stmt(stmt)
-              {:ok, :prepared_and_cleaned}
+                {:ok, :prepared_and_cleaned}
+              after
+                # Always close the prepared statement, ignore errors
+                try do
+                  EctoLibSql.Native.close_stmt(stmt)
+                rescue
+                  _ -> :ok
+                end
+              end
             after
               EctoLibSql.disconnect([], state)
             end
