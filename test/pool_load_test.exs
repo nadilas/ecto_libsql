@@ -349,6 +349,66 @@ defmodule EctoLibSql.PoolLoadTest do
 
     @tag :slow
     @tag :flaky
+    test "connection recovery with edge-case data (NULL, empty, large values)", %{
+      test_db: test_db
+    } do
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      try do
+        # Insert edge-case data before error
+        edge_values = generate_edge_case_values(1)
+
+        Enum.each(edge_values, fn value ->
+          insert_edge_case_value(state, value)
+        end)
+
+        # Cause error
+        error_result = EctoLibSql.handle_execute("MALFORMED SQL HERE", [], [], state)
+        assert {:error, _reason, ^state} = error_result
+
+        # Insert more edge-case data after error to verify recovery
+        edge_values_2 = generate_edge_case_values(2)
+
+        insert_results =
+          Enum.map(edge_values_2, fn value ->
+            insert_edge_case_value(state, value)
+          end)
+
+        # All inserts should succeed
+        all_ok = Enum.all?(insert_results, fn r -> match?({:ok, _, _, _}, r) end)
+        assert all_ok
+      after
+        EctoLibSql.disconnect([], state)
+      end
+
+      # Verify all edge-case data persisted
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      try do
+        {:ok, _query, result, _state} =
+          EctoLibSql.handle_execute("SELECT COUNT(*) FROM test_data", [], [], state)
+
+        # Should have 10 rows (5 before error + 5 after)
+        assert [[10]] = result.rows
+
+        # Verify NULL values
+        {:ok, _query, null_result, _state} =
+          EctoLibSql.handle_execute(
+            "SELECT COUNT(*) FROM test_data WHERE value IS NULL",
+            [],
+            [],
+            state
+          )
+
+        # Should have 2 NULL values
+        assert [[2]] = null_result.rows
+      after
+        EctoLibSql.disconnect([], state)
+      end
+    end
+
+    @tag :slow
+    @tag :flaky
     test "multiple connections recover independently from errors", %{test_db: test_db} do
       tasks =
         Enum.map(1..3, fn i ->
@@ -475,6 +535,92 @@ defmodule EctoLibSql.PoolLoadTest do
       EctoLibSql.disconnect([], state)
 
       assert [[5]] = result.rows
+    end
+
+    @tag :slow
+    @tag :flaky
+    test "prepared statements with edge-case data cleaned up correctly", %{
+      test_db: test_db
+    } do
+      tasks =
+        Enum.map(1..5, fn task_num ->
+          Task.async(fn ->
+            {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+            try do
+              {:ok, stmt} =
+                EctoLibSql.Native.prepare(
+                  state,
+                  "INSERT INTO test_data (value) VALUES (?)"
+                )
+
+              # Execute prepared statement with edge-case data
+              edge_values = generate_edge_case_values(task_num)
+
+              execute_results =
+                Enum.map(edge_values, fn value ->
+                  EctoLibSql.Native.execute_stmt(
+                    state,
+                    stmt,
+                    "INSERT INTO test_data (value) VALUES (?)",
+                    [value]
+                  )
+                end)
+
+              # All executions should succeed
+              all_ok = Enum.all?(execute_results, fn r -> match?({:ok, _}, r) end)
+
+              if all_ok do
+                :ok = EctoLibSql.Native.close_stmt(stmt)
+                {:ok, :prepared_with_edge_cases}
+              else
+                {:error, :some_edge_case_inserts_failed}
+              end
+            after
+              EctoLibSql.disconnect([], state)
+            end
+          end)
+        end)
+
+      results = Task.await_many(tasks, 30_000)
+
+      # Verify all prepared statement operations succeeded
+      Enum.each(results, fn result ->
+        case result do
+          {:ok, :prepared_with_edge_cases} ->
+            :ok
+
+          {:error, reason} ->
+            flunk("Prepared statement with edge-case data failed: #{inspect(reason)}")
+
+          other ->
+            flunk("Unexpected result from prepared statement edge-case task: #{inspect(other)}")
+        end
+      end)
+
+      # Verify all inserts succeeded: 5 tasks × 5 edge cases = 25 rows
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      try do
+        {:ok, _query, result, _state} =
+          EctoLibSql.handle_execute("SELECT COUNT(*) FROM test_data", [], [], state)
+
+        assert [[25]] = result.rows
+
+        # Verify NULL values exist
+        {:ok, _query, null_result, _state} =
+          EctoLibSql.handle_execute(
+            "SELECT COUNT(*) FROM test_data WHERE value IS NULL",
+            [],
+            [],
+            state
+          )
+
+        # Should have 5 NULL values (one per task)
+        assert [[5]] = null_result.rows
+      after
+        EctoLibSql.disconnect([], state)
+      end
     end
   end
 
