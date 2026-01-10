@@ -47,6 +47,18 @@ defmodule EctoLibSql.SavepointReplicationTest do
       )
 
     on_exit(fn ->
+      # Drop remote table to clean up Turso database
+      try do
+        EctoLibSql.handle_execute(
+          "DROP TABLE IF EXISTS #{test_table}",
+          [],
+          [],
+          state
+        )
+      rescue
+        _ -> :ok
+      end
+
       try do
         EctoLibSql.disconnect([], state)
       rescue
