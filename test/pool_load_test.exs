@@ -19,7 +19,7 @@ defmodule EctoLibSql.PoolLoadTest do
   setup do
     test_db = "z_ecto_libsql_test-pool_#{:erlang.unique_integer([:positive])}.db"
 
-    # Create test table
+    # Create test table and close connection immediately
     {:ok, state} = EctoLibSql.connect(database: test_db)
 
     {:ok, _query, _result, state} =
@@ -30,11 +30,10 @@ defmodule EctoLibSql.PoolLoadTest do
         state
       )
 
-    # Capture conn_id for reliable cleanup
-    conn_id = state.conn_id
+    # Close setup connection - tests create their own connections
+    EctoLibSql.disconnect([], state)
 
     on_exit(fn ->
-      EctoLibSql.disconnect([], %EctoLibSql.State{conn_id: conn_id})
       EctoLibSql.TestHelpers.cleanup_db_files(test_db)
     end)
 
@@ -75,15 +74,7 @@ defmodule EctoLibSql.PoolLoadTest do
     ]
   end
 
-  defp insert_unicode_edge_case_value(state, value) do
-    EctoLibSql.handle_execute(
-      "INSERT INTO test_data (value) VALUES (?)",
-      [value],
-      [],
-      state
-    )
-  end
-
+  # Single helper for inserting any edge case value (normal, unicode, NULL, empty, etc.)
   defp insert_edge_case_value(state, value) do
     EctoLibSql.handle_execute(
       "INSERT INTO test_data (value) VALUES (?)",
@@ -262,7 +253,7 @@ defmodule EctoLibSql.PoolLoadTest do
 
               results =
                 Enum.map(unicode_values, fn value ->
-                  insert_unicode_edge_case_value(state, value)
+                  insert_edge_case_value(state, value)
                 end)
 
               # All inserts should succeed
@@ -1124,7 +1115,7 @@ defmodule EctoLibSql.PoolLoadTest do
     test "concurrent transaction rollback leaves no data", %{test_db: test_db} do
       # Clear any existing data
       {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
-      EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
+      {:ok, _, _, state} = EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
       EctoLibSql.disconnect([], state)
 
       tasks =
@@ -1182,7 +1173,7 @@ defmodule EctoLibSql.PoolLoadTest do
     test "mixed commit and rollback transactions maintain consistency", %{test_db: test_db} do
       # Clear any existing data
       {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
-      EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
+      {:ok, _, _, state} = EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
       EctoLibSql.disconnect([], state)
 
       # Even tasks commit, odd tasks rollback
@@ -1296,14 +1287,21 @@ defmodule EctoLibSql.PoolLoadTest do
 
               case result do
                 {:error, _reason, trx_state} ->
-                  # Expected: constraint violation
-                  EctoLibSql.Native.rollback(trx_state)
-                  {:ok, :correctly_rolled_back}
+                  # Expected: constraint violation - assert rollback succeeds
+                  case EctoLibSql.Native.rollback(trx_state) do
+                    {:ok, _} -> {:ok, :correctly_rolled_back}
+                    {:error, reason} -> {:error, {:rollback_failed, reason}}
+                  end
 
                 {:ok, _query, _result, trx_state} ->
-                  # Unexpected: should have failed
-                  EctoLibSql.Native.rollback(trx_state)
-                  {:error, :should_have_failed}
+                  # Unexpected: should have failed - still need to clean up
+                  case EctoLibSql.Native.rollback(trx_state) do
+                    {:ok, _} ->
+                      {:error, :should_have_failed}
+
+                    {:error, reason} ->
+                      {:error, {:unexpected_success_and_rollback_failed, reason}}
+                  end
               end
             after
               EctoLibSql.disconnect([], state)
@@ -1335,7 +1333,7 @@ defmodule EctoLibSql.PoolLoadTest do
     test "concurrent transactions with edge-case data and rollback", %{test_db: test_db} do
       # Clear table
       {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
-      EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
+      {:ok, _, _, state} = EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
       EctoLibSql.disconnect([], state)
 
       tasks =
