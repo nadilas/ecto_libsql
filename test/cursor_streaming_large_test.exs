@@ -8,6 +8,7 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
 
   setup do
     {:ok, state} = EctoLibSql.connect(database: ":memory:")
+    conn_id = state.conn_id
 
     # Create a test table for large data
     {:ok, _, _, state} =
@@ -27,7 +28,8 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
       )
 
     on_exit(fn ->
-      EctoLibSql.disconnect([], state)
+      # Use conn_id to ensure we disconnect the correct connection
+      EctoLibSql.disconnect([], %{conn_id: conn_id})
     end)
 
     {:ok, state: state}
@@ -687,7 +689,7 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
         "INSERT INTO large_data (id, batch_id, sequence, value) VALUES (?, ?, ?, ?)"
       )
 
-    state =
+    try do
       Enum.reduce(start_id..end_id, state, fn id, acc_state ->
         value = "value_#{id}_batch_#{batch_id}"
 
@@ -701,10 +703,10 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
 
         acc_state
       end)
-
-    # Clean up prepared statement
-    :ok = EctoLibSql.Native.close_stmt(stmt)
-    state
+    after
+      # Always clean up prepared statement, even on error
+      EctoLibSql.Native.close_stmt(stmt)
+    end
   end
 
   defp fetch_all_rows(state, cursor, query, opts) do
@@ -751,6 +753,9 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
       {:halt, result, _state} ->
         ids = Enum.map(result.rows, fn [id] -> id end)
         [ids | acc]
+
+      {:error, reason, _state} ->
+        flunk("Cursor fetch failed in fetch_all_ids_acc: #{inspect(reason)}")
     end
   end
 
@@ -770,6 +775,9 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
 
       {:halt, result, _state} ->
         [result.rows | acc]
+
+      {:error, reason, _state} ->
+        flunk("Cursor fetch failed in fetch_all_cursor_rows_acc: #{inspect(reason)}")
     end
   end
 
@@ -797,6 +805,9 @@ defmodule EctoLibSql.CursorStreamingLargeTest do
 
       {:halt, _result, _state} ->
         1
+
+      {:error, reason, _state} ->
+        flunk("Cursor fetch failed in count_batches: #{inspect(reason)}")
     end
   end
 end

@@ -22,7 +22,7 @@ defmodule EctoLibSql.PoolLoadTest do
     # Create test table
     {:ok, state} = EctoLibSql.connect(database: test_db)
 
-    {:ok, _query, _result, _state} =
+    {:ok, _query, _result, state} =
       EctoLibSql.handle_execute(
         "CREATE TABLE test_data (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT, duration INTEGER)",
         [],
@@ -30,8 +30,11 @@ defmodule EctoLibSql.PoolLoadTest do
         state
       )
 
+    # Capture conn_id for reliable cleanup
+    conn_id = state.conn_id
+
     on_exit(fn ->
-      EctoLibSql.disconnect([], state)
+      EctoLibSql.disconnect([], %{conn_id: conn_id})
       EctoLibSql.TestHelpers.cleanup_db_files(test_db)
     end)
 
