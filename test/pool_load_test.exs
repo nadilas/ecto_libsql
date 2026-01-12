@@ -12,7 +12,7 @@ defmodule EctoLibSql.PoolLoadTest do
   Note: Tests create separate connections (not pooled) to simulate
   concurrent access patterns and verify robustness.
   """
-  use ExUnit.Case
+  use ExUnit.Case, async: false
   require Logger
 
   alias EctoLibSql
@@ -296,10 +296,13 @@ defmodule EctoLibSql.PoolLoadTest do
 
       values = Enum.map(all_rows_result.rows, fn [v] -> v end)
 
-      # Verify specific Unicode patterns are preserved (5 tasks, each pattern appears 5 times)
-      assert Enum.count(values, &String.contains?(&1, "café")) == 5
-      assert Enum.count(values, &String.contains?(&1, "中文")) == 5
-      assert Enum.count(values, &String.contains?(&1, "العربية")) == 5
+      # Verify specific Unicode patterns are preserved
+      # Note: café, 中文, and العربية appear in both individual and "mixed_..." patterns = 10 each
+      # The emoji pattern 😀🎉❤️ only appears in "emoji_..." (mixed_ has just 😀) = 5
+      # mixed_ only appears in the mixed pattern = 5
+      assert Enum.count(values, &String.contains?(&1, "café")) == 10
+      assert Enum.count(values, &String.contains?(&1, "中文")) == 10
+      assert Enum.count(values, &String.contains?(&1, "العربية")) == 10
       assert Enum.count(values, &String.contains?(&1, "😀🎉❤️")) == 5
       assert Enum.count(values, &String.contains?(&1, "mixed_")) == 5
     end
@@ -397,8 +400,8 @@ defmodule EctoLibSql.PoolLoadTest do
   end
 
   describe "connection recovery" do
-    @tag :slow
-    @tag :flaky
+    # Note: This test is sequential (not concurrent) and runs by default.
+    # It complements connection_recovery_test.exs by using file-based database.
     test "connection recovers after query error", %{test_db: test_db} do
       {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
 
@@ -441,8 +444,7 @@ defmodule EctoLibSql.PoolLoadTest do
       end
     end
 
-    @tag :slow
-    @tag :flaky
+    # Note: This test is sequential (not concurrent) and runs by default.
     test "connection recovery with edge-case data (NULL, empty, large values)", %{
       test_db: test_db
     } do
@@ -599,27 +601,17 @@ defmodule EctoLibSql.PoolLoadTest do
 
                 {:ok, :prepared_and_cleaned}
               after
-                # Always close the prepared statement, catching only expected errors
-                try do
-                  EctoLibSql.Native.close_stmt(stmt)
-                rescue
-                  e ->
-                    case e do
-                      %ArgumentError{} ->
-                        # Expected exception from close_stmt - log and continue
-                        Logger.debug("Expected error closing prepared statement: #{inspect(e)}")
-                        :ok
+                # Always close the prepared statement, handle errors gracefully.
+                case EctoLibSql.Native.close_stmt(stmt) do
+                  :ok ->
+                    :ok
 
-                      %RuntimeError{} ->
-                        # Expected exception from close_stmt - log and continue
-                        Logger.debug("Expected error closing prepared statement: #{inspect(e)}")
-                        :ok
+                  {:error, reason} ->
+                    Logger.debug(
+                      "Error closing prepared statement #{inspect(stmt)}: #{inspect(reason)}"
+                    )
 
-                      _ ->
-                        # Unexpected exception - re-raise for debugging
-                        Logger.error("Unexpected error closing prepared statement: #{inspect(e)}")
-                        raise e
-                    end
+                    :ok
                 end
               end
             after
@@ -695,27 +687,17 @@ defmodule EctoLibSql.PoolLoadTest do
                   {:error, :some_edge_case_inserts_failed}
                 end
               after
-                # Always close the prepared statement, catching only expected errors
-                try do
-                  EctoLibSql.Native.close_stmt(stmt)
-                rescue
-                  e ->
-                    case e do
-                      %ArgumentError{} ->
-                        # Expected exception from close_stmt - log and continue
-                        Logger.debug("Expected error closing prepared statement: #{inspect(e)}")
-                        :ok
+                # Always close the prepared statement, handle errors gracefully.
+                case EctoLibSql.Native.close_stmt(stmt) do
+                  :ok ->
+                    :ok
 
-                      %RuntimeError{} ->
-                        # Expected exception from close_stmt - log and continue
-                        Logger.debug("Expected error closing prepared statement: #{inspect(e)}")
-                        :ok
+                  {:error, reason} ->
+                    Logger.debug(
+                      "Error closing prepared statement #{inspect(stmt)}: #{inspect(reason)}"
+                    )
 
-                      _ ->
-                        # Unexpected exception - re-raise for debugging
-                        Logger.error("Unexpected error closing prepared statement: #{inspect(e)}")
-                        raise e
-                    end
+                    :ok
                 end
               end
             after
