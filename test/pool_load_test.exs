@@ -403,7 +403,11 @@ defmodule EctoLibSql.PoolLoadTest do
     # Note: This test is sequential (not concurrent) and runs by default.
     # It complements connection_recovery_test.exs by using file-based database.
     test "connection recovers after query error", %{test_db: test_db} do
+      # Clear table first to ensure exact row count assertions
       {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
 
       try do
         # Successful insert
@@ -913,6 +917,14 @@ defmodule EctoLibSql.PoolLoadTest do
     @tag :slow
     @tag :flaky
     test "concurrent load with only NULL values", %{test_db: test_db} do
+      # Clear table first to ensure exact row count assertions
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
+
+      EctoLibSql.disconnect([], state)
+
       tasks =
         Enum.map(1..10, fn _i ->
           Task.async(fn ->
@@ -956,6 +968,14 @@ defmodule EctoLibSql.PoolLoadTest do
     @tag :slow
     @tag :flaky
     test "concurrent load with only empty strings", %{test_db: test_db} do
+      # Clear table first to ensure exact row count assertions
+      {:ok, state} = EctoLibSql.connect(database: test_db, busy_timeout: 30_000)
+
+      {:ok, _, _, state} =
+        EctoLibSql.handle_execute("DELETE FROM test_data", [], [], state)
+
+      EctoLibSql.disconnect([], state)
+
       tasks =
         Enum.map(1..10, fn _i ->
           Task.async(fn ->
