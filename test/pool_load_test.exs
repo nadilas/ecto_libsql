@@ -854,7 +854,7 @@ defmodule EctoLibSql.PoolLoadTest do
                              {:ok, _query, _result, new_state} ->
                                {:cont, {:ok, new_state}}
 
-                             {:error, _query, reason, _state} ->
+                             {:error, reason, _state} ->
                                {:halt, {:error, {:insert_failed, reason}}}
                            end
 
