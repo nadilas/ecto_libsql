@@ -140,9 +140,7 @@ defmodule EctoLibSql.TypeEncodingImplementationTest do
       # Query with boolean parameter
       import Ecto.Query
 
-      active_users =
-        from(u in User, where: u.active == ^true)
-        |> TestRepo.all()
+      active_users = TestRepo.all(from(u in User, where: u.active == ^true))
 
       assert length(active_users) == 1
       assert hd(active_users).name == "Dave"
@@ -210,7 +208,7 @@ defmodule EctoLibSql.TypeEncodingImplementationTest do
       # Query with UUID parameter
       import Ecto.Query
 
-      users = from(u in User, where: u.uuid == ^uuid) |> TestRepo.all()
+      users = TestRepo.all(from(u in User, where: u.uuid == ^uuid))
 
       assert length(users) == 1
       assert hd(users).uuid == uuid
@@ -309,8 +307,7 @@ defmodule EctoLibSql.TypeEncodingImplementationTest do
       ]
 
       _results =
-        statements
-        |> Enum.map(fn {sql, params} ->
+        Enum.map(statements, fn {sql, params} ->
           SQL.query!(TestRepo, sql, params)
         end)
 
@@ -332,9 +329,7 @@ defmodule EctoLibSql.TypeEncodingImplementationTest do
       # Query with multiple encoded types
       import Ecto.Query
 
-      users =
-        from(u in User, where: u.active == ^true and u.uuid == ^uuid)
-        |> TestRepo.all()
+      users = TestRepo.all(from(u in User, where: u.active == ^true and u.uuid == ^uuid))
 
       assert length(users) == 1
       assert Enum.all?(users, fn u -> u.active == true and u.uuid == uuid end)
@@ -727,7 +722,7 @@ defmodule EctoLibSql.TypeEncodingImplementationTest do
     end
 
     test "very large float" do
-      float_val = 1.23456789e10
+      float_val = 12_345_678_900.0
 
       result = SQL.query!(TestRepo, "INSERT INTO test_types (real_col) VALUES (?)", [float_val])
       assert result.num_rows == 1
