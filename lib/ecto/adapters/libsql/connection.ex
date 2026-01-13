@@ -422,14 +422,14 @@ defmodule Ecto.Adapters.LibSql.Connection do
   defp column_default(value) when is_binary(value), do: " DEFAULT '#{escape_string(value)}'"
   defp column_default(value) when is_number(value), do: " DEFAULT #{value}"
   defp column_default({:fragment, expr}), do: " DEFAULT #{expr}"
-  # Handle any other unexpected types (e.g., empty maps from Oban or third-party migrations)
+  # Handle any other unexpected types (e.g., empty maps or third-party migrations)
   # Logs a warning to help with debugging while gracefully falling back to no DEFAULT clause
   defp column_default(unexpected) do
     require Logger
 
     Logger.warning(
       "Unsupported default value type in migration: #{inspect(unexpected)} - " <>
-        "no DEFAULT clause will be generated. This commonly occurs with Oban-generated migrations " <>
+        "no DEFAULT clause will be generated. This can occur with some generated migrations " <>
         "or other third-party integrations that provide unexpected default types."
     )
 

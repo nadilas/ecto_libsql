@@ -938,7 +938,7 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
 
     test "handles unexpected types gracefully (empty map)" do
       # This test verifies the catch-all clause for unexpected types.
-      # Empty maps can come from Oban migrations or other third-party code.
+      # Empty maps can come from some migrations or other third-party code.
       table = %Table{name: :users, prefix: nil}
       columns = [{:add, :metadata, :string, [default: %{}]}]
 
