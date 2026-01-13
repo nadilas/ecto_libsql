@@ -112,12 +112,12 @@ defmodule EctoLibSql.QueryEncodingTest do
       assert [^binary] = encoded
     end
 
-    test "passes through boolean values unchanged", %{query: query} do
+    test "converts boolean values to integers (SQLite representation)", %{query: query} do
       params = [true, false]
 
       encoded = DBConnection.Query.encode(query, params, [])
 
-      assert [true, false] = encoded
+      assert [1, 0] = encoded
     end
 
     test "handles mixed parameter types", %{query: query} do
@@ -140,7 +140,7 @@ defmodule EctoLibSql.QueryEncodingTest do
                "2024-01-15",
                "10:30:45",
                nil,
-               true,
+               1,
                "99.99",
                "2024-01-15T10:30:45Z"
              ] = encoded
