@@ -563,11 +563,12 @@ defmodule EctoLibSql.TypeEncodingImplementationTest do
 
       result =
         SQL.query!(TestRepo, "SELECT int_col FROM test_types WHERE int_col = ?", [0])
+
       assert [[0]] = result.rows
 
       result =
         SQL.query!(TestRepo, "SELECT real_col FROM test_types WHERE real_col = ?", [0.0])
-      
+
       [[stored_real]] = result.rows
       # Float comparison: allow for +0.0 vs -0.0 representation
       assert stored_real == +0.0 or stored_real == -0.0
