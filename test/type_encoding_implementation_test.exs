@@ -751,7 +751,7 @@ defmodule EctoLibSql.TypeEncodingImplementationTest do
         SQL.query!(TestRepo, "SELECT COUNT(*) FROM test_types WHERE real_col > ?", [1.0])
 
       assert [[count]] = result.rows
-      assert count >= 2
+      assert count == 2
     end
 
     test "float in aggregate functions" do
