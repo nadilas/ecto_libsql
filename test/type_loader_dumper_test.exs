@@ -21,7 +21,7 @@ defmodule EctoLibSql.TypeLoaderDumperTest do
 
     schema "all_types" do
       # Integer types
-      field(:id_field, :id)
+      field(:id_field, :integer)
       field(:integer_field, :integer)
 
       # String types
@@ -287,8 +287,8 @@ defmodule EctoLibSql.TypeLoaderDumperTest do
 
       # Load via schema - the loader should convert
       record = TestRepo.get(AllTypesSchema, 1)
-      # boolean_field should be nil (NULL) or properly loaded
-      assert record.boolean_field in [nil, true, false]
+      # No boolean value was inserted, should be nil
+      assert record.boolean_field == nil
     end
   end
 
@@ -738,9 +738,15 @@ defmodule EctoLibSql.TypeLoaderDumperTest do
       assert Decimal.equal?(record.decimal_field, attrs.decimal_field)
       assert record.date_field == attrs.date_field
       assert record.time_field == attrs.time_field
-      # Microseconds might be truncated depending on precision
+      # Microseconds might be truncated depending on precision, verify date/time components
       assert record.naive_datetime_field.year == naive_now.year
+      assert record.naive_datetime_field.month == naive_now.month
+      assert record.naive_datetime_field.day == naive_now.day
+      assert record.naive_datetime_field.hour == naive_now.hour
       assert record.utc_datetime_field.year == now.year
+      assert record.utc_datetime_field.month == now.month
+      assert record.utc_datetime_field.day == now.day
+      assert record.utc_datetime_field.hour == now.hour
       assert record.map_field == attrs.map_field
       assert record.json_field == attrs.json_field
       assert record.array_field == attrs.array_field
