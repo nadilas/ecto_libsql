@@ -1,9 +1,9 @@
 defmodule EctoLibSql.EctoSqlite3ReturningDebugTest do
   @moduledoc """
-  Debug test to isolate RETURNING clause issues
+  Tests to verify RETURNING clause works with auto-generated IDs
   """
 
-  use ExUnit.Case, async: false
+  use EctoLibSql.Integration.Case, async: false
 
   alias EctoLibSql.Integration.TestRepo
   alias EctoLibSql.Schemas.User
@@ -32,16 +32,6 @@ defmodule EctoLibSql.EctoSqlite3ReturningDebugTest do
         log: false
       )
 
-    # Check that table was created
-    {:ok, result} =
-      Ecto.Adapters.SQL.query(
-        TestRepo,
-        "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'",
-        []
-      )
-
-    IO.inspect(result, label: "Users table schema")
-
     on_exit(fn ->
       # Clean up the test database
       EctoLibSql.TestHelpers.cleanup_db_files(@test_db)
@@ -51,14 +41,10 @@ defmodule EctoLibSql.EctoSqlite3ReturningDebugTest do
   end
 
   test "insert returns user with ID" do
-    IO.puts("\n=== Testing Repo.insert RETURNING ===")
-
     result = TestRepo.insert(%User{name: "Alice"})
-    IO.inspect(result, label: "Insert result")
 
     case result do
       {:ok, user} ->
-        IO.inspect(user, label: "User struct")
         assert user.id != nil, "User ID should not be nil"
         assert user.name == "Alice"
         assert user.inserted_at != nil, "inserted_at should not be nil"
@@ -78,7 +64,6 @@ defmodule EctoLibSql.EctoSqlite3ReturningDebugTest do
         assert bob.id != nil
         assert charlie.id != nil
         assert bob.id != charlie.id
-        IO.inspect({bob.id, charlie.id}, label: "IDs")
 
       _ ->
         flunk("One or more inserts failed")

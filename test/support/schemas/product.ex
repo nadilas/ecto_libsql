@@ -35,7 +35,9 @@ defmodule EctoLibSql.Schemas.Product do
       :approved_at,
       :ordered_at,
       :inserted_at,
-      :type
+      :type,
+      :price,
+      :bid
     ])
     |> validate_required([:name])
     |> maybe_generate_external_id()

@@ -404,6 +404,7 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
     test "can handle floats" do
       TestRepo.insert!(%Account{name: "Main"})
 
+      # Test SQLite type coercion: string "1.0" should be coerced to float
       one = "1.0"
       two = 2.0
 
