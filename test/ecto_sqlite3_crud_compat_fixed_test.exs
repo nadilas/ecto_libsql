@@ -10,11 +10,8 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatFixedTest do
   end
 
   alias EctoLibSql.Schemas.Account
-  alias EctoLibSql.Schemas.AccountUser
   alias EctoLibSql.Schemas.Product
   alias EctoLibSql.Schemas.User
-
-  import Ecto.Query
 
   @test_db "z_ecto_libsql_test-crud_fixed.db"
 

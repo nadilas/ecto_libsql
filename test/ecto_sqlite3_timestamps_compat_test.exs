@@ -249,7 +249,7 @@ defmodule EctoLibSql.EctoSqlite3TimestampsCompatTest do
   end
 
   test "naive datetime with microseconds" do
-    now_naive = NaiveDateTime.utc_now()
+    _now_naive = NaiveDateTime.utc_now()
 
     {:ok, user} =
       %UserNaiveDatetime{}
@@ -262,7 +262,7 @@ defmodule EctoLibSql.EctoSqlite3TimestampsCompatTest do
   end
 
   test "utc datetime with microseconds" do
-    now_utc = DateTime.utc_now()
+    _now_utc = DateTime.utc_now()
 
     {:ok, user} =
       %UserUtcDatetime{}
