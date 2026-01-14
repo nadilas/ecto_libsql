@@ -229,8 +229,15 @@ defmodule Ecto.Adapters.LibSql do
 
   defp datetime_decode(value) when is_binary(value) do
     case NaiveDateTime.from_iso8601(value) do
-      {:ok, datetime} -> {:ok, datetime}
-      {:error, _} -> :error
+      {:ok, datetime} ->
+        {:ok, datetime}
+
+      {:error, _} ->
+        # Try parsing as timezone-aware ISO8601 (with "Z" or offset)
+        case DateTime.from_iso8601(value) do
+          {:ok, datetime, _offset} -> {:ok, datetime}
+          {:error, _} -> :error
+        end
     end
   end
 
