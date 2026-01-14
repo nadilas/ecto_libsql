@@ -170,7 +170,7 @@ defmodule EctoLibSql.EctoSqlite3TimestampsCompatTest do
     assert product.ordered_at == DateTime.truncate(now, :second)
 
     changeset = Product.changeset(product, %{approved_at: nil, ordered_at: nil})
-    TestRepo.update(changeset)
+    assert {:ok, _updated_product} = TestRepo.update(changeset)
     product = TestRepo.get(Product, product.id)
     assert product.approved_at == nil
     assert product.ordered_at == nil
