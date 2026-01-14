@@ -1,7 +1,7 @@
 defmodule EctoLibSql.EctoSqlite3JsonCompatTest do
   @moduledoc """
   Compatibility tests based on ecto_sqlite3 JSON test suite.
-  
+
   These tests ensure that JSON/MAP field serialization and deserialization
   works identically to ecto_sqlite3.
   """
@@ -20,7 +20,7 @@ defmodule EctoLibSql.EctoSqlite3JsonCompatTest do
   setup_all do
     # Clean up any existing test database
     EctoLibSql.TestHelpers.cleanup_db_files(@test_db)
-    
+
     # Configure the repo
     Application.put_env(:ecto_libsql, TestRepo,
       adapter: Ecto.Adapters.LibSql,
@@ -105,13 +105,13 @@ defmodule EctoLibSql.EctoSqlite3JsonCompatTest do
   end
 
   test "json field with nil" do
-    changeset = 
+    changeset =
       %Setting{}
       |> Setting.changeset(%{properties: nil})
       |> Ecto.Changeset.force_change(:properties, nil)
-    
+
     IO.inspect(changeset, label: "Changeset before insert")
-    
+
     setting = TestRepo.insert!(changeset)
 
     fetched = TestRepo.get(Setting, setting.id)

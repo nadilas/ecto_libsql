@@ -10,16 +10,16 @@ defmodule EctoLibSql.TypeCompatibilityTest do
     import Ecto.Changeset
 
     schema "records" do
-      field :bool_field, :boolean
-      field :int_field, :integer
-      field :float_field, :float
-      field :string_field, :string
-      field :map_field, :map
-      field :array_field, {:array, :string}
-      field :date_field, :date
-      field :time_field, :time
-      field :utc_datetime_field, :utc_datetime
-      field :naive_datetime_field, :naive_datetime
+      field(:bool_field, :boolean)
+      field(:int_field, :integer)
+      field(:float_field, :float)
+      field(:string_field, :string)
+      field(:map_field, :map)
+      field(:array_field, {:array, :string})
+      field(:date_field, :date)
+      field(:time_field, :time)
+      field(:utc_datetime_field, :utc_datetime)
+      field(:naive_datetime_field, :naive_datetime)
 
       timestamps()
     end
@@ -27,9 +27,16 @@ defmodule EctoLibSql.TypeCompatibilityTest do
     def changeset(record, attrs) do
       record
       |> cast(attrs, [
-        :bool_field, :int_field, :float_field, :string_field,
-        :map_field, :array_field, :date_field, :time_field,
-        :utc_datetime_field, :naive_datetime_field
+        :bool_field,
+        :int_field,
+        :float_field,
+        :string_field,
+        :map_field,
+        :array_field,
+        :date_field,
+        :time_field,
+        :utc_datetime_field,
+        :naive_datetime_field
       ])
     end
   end

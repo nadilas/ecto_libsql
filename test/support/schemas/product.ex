@@ -13,7 +13,8 @@ defmodule EctoLibSql.Schemas.Product do
     field(:external_id, Ecto.UUID)
     field(:type, Ecto.Enum, values: [inventory: 1, non_inventory: 2])
     field(:bid, :binary_id)
-    field(:tags, {:array, :string}, default: [])  # Stored as JSON in SQLite
+    # Stored as JSON in SQLite
+    field(:tags, {:array, :string}, default: [])
     field(:approved_at, :naive_datetime)
     field(:ordered_at, :utc_datetime)
     field(:price, :decimal)

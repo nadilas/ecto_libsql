@@ -280,7 +280,10 @@ defmodule Ecto.Adapters.LibSql do
 
   defp json_array_decode(value) when is_binary(value) do
     case value do
-      "" -> {:ok, []}  # Empty string defaults to empty array
+      # Empty string defaults to empty array
+      "" ->
+        {:ok, []}
+
       _ ->
         case Jason.decode(value) do
           {:ok, decoded} when is_list(decoded) -> {:ok, decoded}
@@ -335,12 +338,14 @@ defmodule Ecto.Adapters.LibSql do
   end
 
   defp json_encode(value) when is_binary(value), do: {:ok, value}
+
   defp json_encode(value) when is_map(value) or is_list(value) do
     case Jason.encode(value) do
       {:ok, json} -> {:ok, json}
       {:error, _} -> :error
     end
   end
+
   defp json_encode(value), do: {:ok, value}
 
   defp array_encode(value) when is_list(value) do
@@ -349,5 +354,6 @@ defmodule Ecto.Adapters.LibSql do
       {:error, _} -> :error
     end
   end
+
   defp array_encode(value), do: {:ok, value}
 end

@@ -11,12 +11,17 @@ defmodule EctoLibSql.ReturningTest do
     {:ok, _, _} =
       DBConnection.execute(
         conn,
-        %EctoLibSql.Query{statement: "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)"},
+        %EctoLibSql.Query{
+          statement: "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)"
+        },
         []
       )
 
     # Insert with RETURNING
-    query = %EctoLibSql.Query{statement: "INSERT INTO users (name, email) VALUES (?, ?) RETURNING id, name, email"}
+    query = %EctoLibSql.Query{
+      statement: "INSERT INTO users (name, email) VALUES (?, ?) RETURNING id, name, email"
+    }
+
     {:ok, _, result} = DBConnection.execute(conn, query, ["Alice", "alice@example.com"])
 
     IO.inspect(result, label: "INSERT RETURNING result")

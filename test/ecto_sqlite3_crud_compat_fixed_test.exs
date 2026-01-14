@@ -88,7 +88,7 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatFixedTest do
 
   test "insert user returns populated struct with id" do
     {:ok, user} = TestRepo.insert(%User{name: "Alice"})
-    
+
     assert user.id != nil, "User ID should not be nil"
     assert user.name == "Alice"
     assert user.inserted_at != nil
@@ -97,13 +97,14 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatFixedTest do
 
   test "insert account and product" do
     {:ok, account} = TestRepo.insert(%Account{name: "TestAccount"})
-    
+
     assert account.id != nil
 
-    {:ok, product} = TestRepo.insert(%Product{
-      name: "TestProduct",
-      account_id: account.id
-    })
+    {:ok, product} =
+      TestRepo.insert(%Product{
+        name: "TestProduct",
+        account_id: account.id
+      })
 
     assert product.id != nil
     assert product.account_id == account.id
@@ -119,17 +120,17 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatFixedTest do
 
   test "update user" do
     {:ok, user} = TestRepo.insert(%User{name: "Charlie"})
-    
+
     changeset = User.changeset(user, %{name: "Charles"})
     {:ok, updated} = TestRepo.update(changeset)
-    
+
     assert updated.name == "Charles"
   end
 
   test "delete user" do
     {:ok, user} = TestRepo.insert(%User{name: "David"})
     {:ok, _} = TestRepo.delete(user)
-    
+
     assert TestRepo.get(User, user.id) == nil
   end
 end

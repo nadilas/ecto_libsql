@@ -20,12 +20,13 @@ defmodule EctoLibSql.EctoSqlite3ReturningDebugTest do
     {:ok, _} = EctoLibSql.Integration.TestRepo.start_link()
 
     # Run migrations
-    :ok = Ecto.Migrator.up(
-      EctoLibSql.Integration.TestRepo,
-      0,
-      EctoLibSql.Integration.Migration,
-      log: false
-    )
+    :ok =
+      Ecto.Migrator.up(
+        EctoLibSql.Integration.TestRepo,
+        0,
+        EctoLibSql.Integration.Migration,
+        log: false
+      )
 
     on_exit(fn ->
       EctoLibSql.TestHelpers.cleanup_db_files(@test_db)
@@ -36,7 +37,7 @@ defmodule EctoLibSql.EctoSqlite3ReturningDebugTest do
 
   test "insert returns user with ID" do
     IO.puts("\n=== Testing Repo.insert RETURNING ===")
-    
+
     result = TestRepo.insert(%User{name: "Alice"})
     IO.inspect(result, label: "Insert result")
 

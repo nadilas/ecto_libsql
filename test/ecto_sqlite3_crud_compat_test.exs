@@ -1,7 +1,7 @@
 defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
   @moduledoc """
   Compatibility tests based on ecto_sqlite3 CRUD test suite.
-  
+
   These tests ensure that ecto_libsql adapter behaves identically to ecto_sqlite3
   for basic CRUD operations.
   """

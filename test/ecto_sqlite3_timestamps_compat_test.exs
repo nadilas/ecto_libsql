@@ -1,7 +1,7 @@
 defmodule EctoLibSql.EctoSqlite3TimestampsCompatTest do
   @moduledoc """
   Compatibility tests based on ecto_sqlite3 timestamps test suite.
-  
+
   These tests ensure that DateTime and NaiveDateTime handling works
   identically to ecto_sqlite3.
   """
@@ -54,7 +54,7 @@ defmodule EctoLibSql.EctoSqlite3TimestampsCompatTest do
   setup_all do
     # Clean up any existing test database
     EctoLibSql.TestHelpers.cleanup_db_files(@test_db)
-    
+
     # Configure the repo
     Application.put_env(:ecto_libsql, TestRepo,
       adapter: Ecto.Adapters.LibSql,
@@ -230,12 +230,13 @@ defmodule EctoLibSql.EctoSqlite3TimestampsCompatTest do
     all_products = Product |> select([p], {p.name, p.inserted_at}) |> TestRepo.all()
     IO.inspect(all_products, label: "All products")
 
-    result = Product
-             |> select([p], p)
-             |> where([p], p.inserted_at >= ago(2, "second"))
-             |> order_by([p], desc: p.inserted_at)
-             |> TestRepo.all()
-    
+    result =
+      Product
+      |> select([p], p)
+      |> where([p], p.inserted_at >= ago(2, "second"))
+      |> order_by([p], desc: p.inserted_at)
+      |> TestRepo.all()
+
     IO.inspect(result, label: "Filtered result")
     assert [%{name: "Foo"}] = result
   end

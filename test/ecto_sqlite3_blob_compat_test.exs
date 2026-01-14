@@ -1,7 +1,7 @@
 defmodule EctoLibSql.EctoSqlite3BlobCompatTest do
   @moduledoc """
   Compatibility tests based on ecto_sqlite3 blob test suite.
-  
+
   These tests ensure that binary/blob field handling works identically to ecto_sqlite3.
   """
 
@@ -19,7 +19,7 @@ defmodule EctoLibSql.EctoSqlite3BlobCompatTest do
   setup_all do
     # Clean up any existing test database
     EctoLibSql.TestHelpers.cleanup_db_files(@test_db)
-    
+
     # Configure the repo
     Application.put_env(:ecto_libsql, TestRepo,
       adapter: Ecto.Adapters.LibSql,

@@ -29,7 +29,8 @@ defmodule EctoLibSql.Integration.Migration do
       add(:description, :text)
       add(:external_id, :uuid)
       add(:bid, :binary_id)
-      add(:tags, :text)  # Store as JSON instead of array
+      # Store as JSON instead of array
+      add(:tags, :text)
       add(:type, :integer)
       add(:approved_at, :naive_datetime)
       add(:ordered_at, :utc_datetime)

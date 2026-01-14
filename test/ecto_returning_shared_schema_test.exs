@@ -9,7 +9,8 @@ defmodule EctoLibSql.EctoReturningSharedSchemaTest do
     use Ecto.Repo, otp_app: :ecto_libsql, adapter: Ecto.Adapters.LibSql
   end
 
-  alias EctoLibSql.Schemas.User  # Using shared schema
+  # Using shared schema
+  alias EctoLibSql.Schemas.User
 
   @test_db "z_ecto_libsql_test-shared_schema_returning.db"
 
@@ -36,7 +37,7 @@ defmodule EctoLibSql.EctoReturningSharedSchemaTest do
 
   test "insert shared schema user and get ID back" do
     IO.puts("\n=== Testing Shared Schema Insert RETURNING ===")
-    
+
     result = LocalTestRepo.insert(%User{name: "Alice"})
     IO.inspect(result, label: "Insert result")
 

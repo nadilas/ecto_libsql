@@ -10,8 +10,8 @@ defmodule EctoLibSql.EctoReturningStructTest do
     import Ecto.Changeset
 
     schema "users" do
-      field :name, :string
-      field :email, :string
+      field(:name, :string)
+      field(:email, :string)
       timestamps()
     end
 
@@ -56,7 +56,7 @@ defmodule EctoLibSql.EctoReturningStructTest do
     case result do
       {:ok, user} ->
         IO.inspect(user, label: "Returned user struct")
-        
+
         # These assertions should pass if RETURNING struct mapping works
         assert user.id != nil, "❌ FAIL: ID is nil (struct mapping broken)"
         assert is_integer(user.id) and user.id > 0, "ID should be positive integer"
