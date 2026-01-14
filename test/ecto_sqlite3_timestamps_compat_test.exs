@@ -226,10 +226,6 @@ defmodule EctoLibSql.EctoSqlite3TimestampsCompatTest do
       inserted_at: seconds_ago(3)
     })
 
-    # Check what's actually in the database
-    all_products = Product |> select([p], {p.name, p.inserted_at}) |> TestRepo.all()
-    IO.inspect(all_products, label: "All products")
-
     result =
       Product
       |> select([p], p)
@@ -237,7 +233,6 @@ defmodule EctoLibSql.EctoSqlite3TimestampsCompatTest do
       |> order_by([p], desc: p.inserted_at)
       |> TestRepo.all()
 
-    IO.inspect(result, label: "Filtered result")
     assert [%{name: "Foo"}] = result
   end
 
