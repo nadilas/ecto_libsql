@@ -13,10 +13,10 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatFixedTest do
   alias EctoLibSql.Schemas.Product
   alias EctoLibSql.Schemas.User
 
-  @test_db "z_ecto_libsql_test-crud_fixed.db"
-
   setup_all do
-    {:ok, _} = TestRepo.start_link(database: @test_db)
+    # Use unique per-run DB filename to avoid cross-run collisions.
+    test_db = "z_ecto_libsql_test-crud_fixed_#{System.unique_integer([:positive])}.db"
+    {:ok, _} = TestRepo.start_link(database: test_db)
 
     # Create tables manually to match working test
     Ecto.Adapters.SQL.query!(TestRepo, """
@@ -77,7 +77,7 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatFixedTest do
     """)
 
     on_exit(fn ->
-      EctoLibSql.TestHelpers.cleanup_db_files(@test_db)
+      EctoLibSql.TestHelpers.cleanup_db_files(test_db)
     end)
 
     :ok

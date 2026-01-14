@@ -1014,7 +1014,7 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
       {:ok, _} = Ecto.Adapters.SQL.query(TestRepo, "INSERT INTO users (age) VALUES (?)", [25])
 
       # Invalid insert should fail.
-      assert {:error, %{message: message}} =
+      assert {:error, %EctoLibSql.Error{message: message}} =
                Ecto.Adapters.SQL.query(TestRepo, "INSERT INTO users (age) VALUES (?)", [-5])
 
       assert message =~ "CHECK constraint failed"
@@ -1116,7 +1116,7 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
         )
 
       # Invalid attempt (negative) should fail.
-      assert {:error, %{message: message}} =
+      assert {:error, %EctoLibSql.Error{message: message}} =
                Ecto.Adapters.SQL.query(
                  TestRepo,
                  "INSERT INTO jobs (attempt, max_attempts, priority) VALUES (?, ?, ?)",
@@ -1126,7 +1126,7 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
       assert message =~ "CHECK constraint failed"
 
       # Invalid max_attempts (zero) should fail.
-      assert {:error, %{message: message}} =
+      assert {:error, %EctoLibSql.Error{message: message}} =
                Ecto.Adapters.SQL.query(
                  TestRepo,
                  "INSERT INTO jobs (attempt, max_attempts, priority) VALUES (?, ?, ?)",
@@ -1136,7 +1136,7 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
       assert message =~ "CHECK constraint failed"
 
       # Invalid priority (out of range) should fail.
-      assert {:error, %{message: message}} =
+      assert {:error, %EctoLibSql.Error{message: message}} =
                Ecto.Adapters.SQL.query(
                  TestRepo,
                  "INSERT INTO jobs (attempt, max_attempts, priority) VALUES (?, ?, ?)",
@@ -1144,6 +1144,21 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
                )
 
       assert message =~ "CHECK constraint failed"
+    end
+
+    test "raises error when :check option is not a binary string" do
+      table = %Table{name: :users, prefix: nil}
+
+      columns = [
+        {:add, :id, :id, [primary_key: true]},
+        {:add, :age, :integer, [check: 123]}
+      ]
+
+      assert_raise ArgumentError,
+                   ~r/CHECK constraint expression must be a binary string, got: 123/,
+                   fn ->
+                     Connection.execute_ddl({:create, table, columns})
+                   end
     end
   end
 end

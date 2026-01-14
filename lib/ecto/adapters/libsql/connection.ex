@@ -453,8 +453,15 @@ defmodule Ecto.Adapters.LibSql.Connection do
     # Column-level CHECK constraint
     check =
       case Keyword.get(opts, :check) do
-        nil -> ""
-        expr when is_binary(expr) -> " CHECK (#{expr})"
+        nil ->
+          ""
+
+        expr when is_binary(expr) ->
+          " CHECK (#{expr})"
+
+        invalid ->
+          raise ArgumentError,
+                "CHECK constraint expression must be a binary string, got: #{inspect(invalid)}"
       end
 
     "#{pk}#{null}#{default}#{generated}#{check}"

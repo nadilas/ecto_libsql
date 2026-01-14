@@ -41,11 +41,11 @@ defmodule EctoLibSql.DateTimeUsecTest do
     end
   end
 
-  @test_db "z_ecto_libsql_test-datetime_usec.db"
-
   setup_all do
+    # Use unique per-run DB filename to avoid cross-run collisions.
+    test_db = "z_ecto_libsql_test-datetime_usec_#{System.unique_integer([:positive])}.db"
     # Start the test repo
-    {:ok, _} = TestRepo.start_link(database: @test_db)
+    {:ok, _} = TestRepo.start_link(database: test_db)
 
     # Create sales table
     Ecto.Adapters.SQL.query!(TestRepo, """
@@ -72,7 +72,7 @@ defmodule EctoLibSql.DateTimeUsecTest do
     """)
 
     on_exit(fn ->
-      EctoLibSql.TestHelpers.cleanup_db_files(@test_db)
+      EctoLibSql.TestHelpers.cleanup_db_files(test_db)
     end)
 
     :ok
