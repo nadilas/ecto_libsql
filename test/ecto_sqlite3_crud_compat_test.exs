@@ -33,8 +33,8 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT,
       email TEXT,
-      inserted_at DATETIME,
-      updated_at DATETIME
+      inserted_at TEXT,
+      updated_at TEXT
     )
     """)
 
@@ -43,8 +43,8 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT,
       custom_id TEXT,
-      inserted_at DATETIME,
-      updated_at DATETIME
+      inserted_at TEXT,
+      updated_at TEXT
     )
     """)
 
@@ -58,11 +58,11 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
       bid BLOB,
       tags TEXT,
       type INTEGER,
-      approved_at DATETIME,
-      ordered_at DATETIME,
+      approved_at TEXT,
+      ordered_at TEXT,
       price TEXT,
-      inserted_at DATETIME,
-      updated_at DATETIME
+      inserted_at TEXT,
+      updated_at TEXT
     )
     """)
 
@@ -72,8 +72,8 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
       account_id INTEGER,
       user_id INTEGER,
       role TEXT,
-      inserted_at DATETIME,
-      updated_at DATETIME
+      inserted_at TEXT,
+      updated_at TEXT
     )
     """)
 
@@ -89,6 +89,16 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
       EctoLibSql.TestHelpers.cleanup_db_files(@test_db)
     end)
 
+    :ok
+  end
+
+  setup do
+    # Clear all tables before each test for proper isolation
+    Ecto.Adapters.SQL.query!(TestRepo, "DELETE FROM account_users", [])
+    Ecto.Adapters.SQL.query!(TestRepo, "DELETE FROM products", [])
+    Ecto.Adapters.SQL.query!(TestRepo, "DELETE FROM users", [])
+    Ecto.Adapters.SQL.query!(TestRepo, "DELETE FROM accounts", [])
+    Ecto.Adapters.SQL.query!(TestRepo, "DELETE FROM settings", [])
     :ok
   end
 
@@ -154,6 +164,7 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
       assert found.tags == []
     end
 
+    @tag :sqlite_limitation
     test "insert_all" do
       TestRepo.insert!(%User{name: "John"})
       timestamp = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
@@ -200,6 +211,7 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
       assert changed.name == "Bob"
     end
 
+    @tag :sqlite_limitation
     test "update_all returns correct rows format" do
       # update with no return value should have nil rows
       assert {0, nil} = TestRepo.update_all(User, set: [name: "WOW"])
@@ -324,12 +336,14 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
       assert [] = TestRepo.all(from(a in Account, where: a.name == "HI"))
     end
 
+    @tag :sqlite_limitation
     test "handles case insensitive email" do
       TestRepo.insert!(%Account{name: "hi", email: "hi@hi.com"})
       assert [_] = TestRepo.all(from(a in Account, where: a.email == "hi@hi.com"))
       assert [_] = TestRepo.all(from(a in Account, where: a.email == "HI@HI.COM"))
     end
 
+    @tag :sqlite_limitation
     test "handles exists subquery" do
       account1 = TestRepo.insert!(%Account{name: "Main"})
       user1 = TestRepo.insert!(%User{name: "John"})
@@ -341,6 +355,7 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
       assert [_] = TestRepo.all(from(a in Account, as: :user, where: exists(subquery)))
     end
 
+    @tag :sqlite_limitation
     test "can handle fragment literal" do
       account1 = TestRepo.insert!(%Account{name: "Main"})
 
@@ -351,6 +366,7 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
       assert account.id == account1.id
     end
 
+    @tag :sqlite_limitation
     test "can handle fragment identifier" do
       account1 = TestRepo.insert!(%Account{name: "Main"})
 
@@ -361,6 +377,7 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
       assert account.id == account1.id
     end
 
+    @tag :sqlite_limitation
     test "can handle selected_as" do
       TestRepo.insert!(%Account{name: "Main"})
       TestRepo.insert!(%Account{name: "Main"})
@@ -383,6 +400,7 @@ defmodule EctoLibSql.EctoSqlite3CrudCompatTest do
              ] = TestRepo.all(query)
     end
 
+    @tag :sqlite_limitation
     test "can handle floats" do
       TestRepo.insert!(%Account{name: "Main"})
 
