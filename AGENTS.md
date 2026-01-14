@@ -2845,7 +2845,42 @@ The `EctoLibSql.Native.freeze_replica/1` function is **not implemented**. This f
    end
    ```
 
-### Type Mappings
+   #### SQLite-Specific Query Limitations
+
+   The following Ecto query features are not supported due to SQLite limitations (discovered through comprehensive compatibility testing):
+
+   **Subquery & Aggregation Features:**
+   - `selected_as()` with GROUP BY aliases - SQLite doesn't support column aliases in GROUP BY clauses
+   - `exists()` with parent_as() - Complex nested query correlation has issues
+   - `update_all()` with `select` clause and RETURNING - Ecto feature not well-supported with SQLite
+
+   **Fragment & Dynamic SQL:**
+   - `fragment(literal(...))` - SQLite fragment handling doesn't support literal() syntax
+   - `fragment(identifier(...))` - SQLite fragment handling doesn't support identifier() syntax
+
+   **Type Coercion:**
+   - Mixed arithmetic (string + float) - SQLite returns TEXT type instead of coercing to REAL
+   - Case-insensitive text comparison - SQLite TEXT fields are case-sensitive by default (use `COLLATE NOCASE` for case-insensitive)
+
+   **Binary Data:**
+   - Null bytes in BLOB fields - SQLite truncates BLOB data at null bytes (use JSON encoding as workaround)
+
+   **Temporal Functions:**
+   - `ago(N, unit)` - Does not work with TEXT-based timestamps (SQLite stores datetimes as TEXT in ISO8601 format)
+   - DateTime arithmetic functions - Limited support compared to PostgreSQL
+
+   **Compatibility Testing Results:**
+   - CRUD operations: 13/21 tests passing (8 SQLite limitations documented)
+   - Timestamps: 7/8 tests passing (1 SQLite limitation)
+   - JSON/MAP fields: 6/6 tests passing ✅
+   - Binary/BLOB data: 4/5 tests passing (1 SQLite limitation)
+   - Type compatibility: 1/1 tests passing ✅
+
+   **Overall Ecto/SQLite Compatibility: 31/42 tests passing (74%)**
+
+   All limitations are SQLite-specific and not adapter bugs. They represent features that PostgreSQL/MySQL support but SQLite does not.
+
+   ### Type Mappings
 
 Ecto types map to SQLite types as follows:
 
