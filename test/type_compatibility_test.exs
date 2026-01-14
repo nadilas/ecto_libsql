@@ -123,6 +123,12 @@ defmodule EctoLibSql.TypeCompatibilityTest do
     assert queried.date_field == today, "Date should roundtrip"
     assert queried.time_field == current_time, "Time should roundtrip"
 
+    assert queried.utc_datetime_field == inserted.utc_datetime_field,
+           "UTC datetime should roundtrip"
+
+    assert queried.naive_datetime_field == inserted.naive_datetime_field,
+           "Naive datetime should roundtrip"
+
     IO.puts("✅ PASS: All types round-trip correctly")
   end
 end
