@@ -7,18 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CHECK Constraint Support** - Column-level CHECK constraints in migrations
+- **R*Tree Spatial Indexing** - Full support for SQLite R*Tree virtual tables with 1D-5D indexing, validation, and comprehensive test coverage
+- **ecto_sqlite3 Compatibility Test Suite** - Comprehensive tests ensuring feature parity with ecto_sqlite3
+- **Type Encoding Improvements** - Automatic JSON encoding for plain maps, DateTime/Decimal parameter encoding, improved type coercion
+
 ### Fixed
 
-- **DateTime Microsecond Type Loading**
-  - Fixed loading of `:utc_datetime_usec` and `:naive_datetime_usec` fields from database
-  - Added missing loaders/dumpers for microsecond precision datetime types
-  - Fixed `:time_usec` type loading support
-  - **Issue**: When libsql returned datetime values as ISO 8601 strings (e.g., `"2026-01-14T06:09:59.081609Z"`), ecto_libsql failed to load them into schemas with microsecond precision timestamp fields
-  - **Impact**: Queries with `timestamps()` macro using `@timestamps_opts [type: :utc_datetime_usec]` now work correctly
-  - **Root cause**: Missing loader/dumper definitions for `_usec` datetime type variants
-  - **Solution**: Added loader/dumper definitions that reuse existing datetime parsing functions, which already handle microsecond precision
-  - **Compatibility**: Existing code using `:utc_datetime` and `:naive_datetime` (without `_usec`) continues to work unchanged
-  - **Test coverage**: Comprehensive test suite added in `test/ecto_datetime_usec_test.exs` covering inserts, updates, queries, and raw SQL
+- **DateTime Microsecond Type Loading** - Fixed `:utc_datetime_usec`, `:naive_datetime_usec`, and `:time_usec` loading from ISO 8601 strings with microsecond precision
+- **Parameter Encoding** - Automatic map-to-JSON conversion, DateTime/Decimal encoding for compatibility with Oban and other libraries
+- **Migration Robustness** - Handle `:serial`/`:bigserial` types, improved default value handling with warnings for unsupported types
+- **JSON and RETURNING Clauses** - Fixed JSON encoding in RETURNING queries and datetime function calls
+- **Test Isolation** - Comprehensive database cleanup across all test suites, per-test table clearing, improved resource management
+
+### Changed
+
+- **Test Suite Consolidation** - Streamlined and improved test organization with better coverage of edge cases, error handling, and concurrent operations
+- **Code Quality** - Fixed Credo warnings, improved error handling patterns, removed unused variables/imports, enhanced British English consistency
 
 ## [0.8.6] - 2026-01-07
 
