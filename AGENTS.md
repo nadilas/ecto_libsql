@@ -2863,7 +2863,7 @@ The `EctoLibSql.Native.freeze_replica/1` function is **not implemented**. This f
    - Case-insensitive text comparison - SQLite TEXT fields are case-sensitive by default (use `COLLATE NOCASE` for case-insensitive)
 
    **Binary Data:**
-   - Null bytes in BLOB fields - SQLite truncates BLOB data at null bytes (use JSON encoding as workaround)
+   - SQLite BLOBs are binary-safe and support embedded NUL bytes. If truncation occurs in testing, it indicates an adapter/driver issue (e.g., libSQL/sqlite3 driver incorrectly using text APIs instead of blob APIs). See Binary/BLOB data compatibility test results (4/5 passing).
 
    **Temporal Functions:**
    - `ago(N, unit)` - Does not work with TEXT-based timestamps (SQLite stores datetimes as TEXT in ISO8601 format)
@@ -2878,7 +2878,7 @@ The `EctoLibSql.Native.freeze_replica/1` function is **not implemented**. This f
 
    **Overall Ecto/SQLite Compatibility: 31/42 tests passing (74%)**
 
-   All limitations are SQLite-specific and not adapter bugs. They represent features that PostgreSQL/MySQL support but SQLite does not.
+   All limitations are SQLite-specific and not adapter bugs. They represent features that PostgreSQL/MySQL support, but SQLite does not.
 
    ### Type Mappings
 
