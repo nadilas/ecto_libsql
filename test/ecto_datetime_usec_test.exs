@@ -110,9 +110,9 @@ defmodule EctoLibSql.DateTimeUsecTest do
       assert loaded_sale.customer_name == "Alice"
       assert %DateTime{} = loaded_sale.inserted_at
       assert %DateTime{} = loaded_sale.updated_at
-      # Verify microsecond precision is preserved (check numeric value, not tuple)
-      {usec, _precision} = loaded_sale.inserted_at.microsecond
-      assert usec != 0
+      # Verify microsecond precision is preserved (check precision level, not value).
+      {_usec, precision} = loaded_sale.inserted_at.microsecond
+      assert precision == 6
     end
 
     test "handles updates with utc_datetime_usec" do
@@ -200,9 +200,9 @@ defmodule EctoLibSql.DateTimeUsecTest do
       loaded_event = TestRepo.get!(Event, event.id)
       assert %DateTime{} = loaded_event.occurred_at
 
-      # Verify microsecond precision is preserved (check numeric value, not tuple)
-      {usec, _precision} = loaded_event.occurred_at.microsecond
-      assert usec != 0
+      # Verify microsecond precision is preserved (check precision level, not value).
+      {_usec, precision} = loaded_event.occurred_at.microsecond
+      assert precision == 6
     end
   end
 

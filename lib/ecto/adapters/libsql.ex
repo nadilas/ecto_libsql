@@ -285,7 +285,9 @@ defmodule Ecto.Adapters.LibSql do
 
   defp json_array_decode(value) when is_binary(value) do
     case value do
-      # Empty string defaults to empty array
+      # Empty string defaults to empty array for backwards compatibility with nullable array fields.
+      # This differs from json_decode/1, which would return :error for empty strings,
+      # but provides a reasonable default for array-typed columns that may be empty.
       "" ->
         {:ok, []}
 

@@ -45,7 +45,25 @@ defmodule EctoLibSql.TypeEncodingImplementationTest do
     )
     """)
 
+    # Tables for nil encoding tests.
+    SQL.query!(TestRepo, """
+    CREATE TABLE IF NOT EXISTS test_dates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      birth_date DATE
+    )
+    """)
+
+    SQL.query!(TestRepo, """
+    CREATE TABLE IF NOT EXISTS test_times (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      start_time TIME
+    )
+    """)
+
     on_exit(fn ->
+      # cleanup_db_files removes the entire database file, including all tables.
       EctoLibSql.TestHelpers.cleanup_db_files(@test_db)
     end)
 
@@ -282,15 +300,6 @@ defmodule EctoLibSql.TypeEncodingImplementationTest do
     end
 
     test "nil date encoded correctly" do
-      # Create table if not exists
-      SQL.query!(TestRepo, """
-      CREATE TABLE IF NOT EXISTS test_dates (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        birth_date DATE
-      )
-      """)
-
       SQL.query!(TestRepo, "DELETE FROM test_dates")
 
       # Insert with nil date
@@ -308,15 +317,6 @@ defmodule EctoLibSql.TypeEncodingImplementationTest do
     end
 
     test "nil time encoded correctly" do
-      # Create table if not exists
-      SQL.query!(TestRepo, """
-      CREATE TABLE IF NOT EXISTS test_times (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        start_time TIME
-      )
-      """)
-
       SQL.query!(TestRepo, "DELETE FROM test_times")
 
       # Insert with nil time

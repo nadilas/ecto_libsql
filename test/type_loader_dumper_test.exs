@@ -282,13 +282,46 @@ defmodule EctoLibSql.TypeLoaderDumperTest do
     end
 
     test "loader converts 0/1 to boolean" do
-      # Insert raw integers
-      {:ok, _} = Ecto.Adapters.SQL.query(TestRepo, "INSERT INTO all_types (id) VALUES (1)")
+      # Insert records with raw integer values for boolean field.
+      {:ok, _} =
+        Ecto.Adapters.SQL.query(
+          TestRepo,
+          "INSERT INTO all_types (id, boolean_field) VALUES (?, ?)",
+          [
+            1,
+            0
+          ]
+        )
 
-      # Load via schema - the loader should convert
-      record = TestRepo.get(AllTypesSchema, 1)
-      # No boolean value was inserted, should be nil
-      assert record.boolean_field == nil
+      {:ok, _} =
+        Ecto.Adapters.SQL.query(
+          TestRepo,
+          "INSERT INTO all_types (id, boolean_field) VALUES (?, ?)",
+          [
+            2,
+            1
+          ]
+        )
+
+      {:ok, _} =
+        Ecto.Adapters.SQL.query(
+          TestRepo,
+          "INSERT INTO all_types (id, boolean_field) VALUES (?, ?)",
+          [
+            3,
+            nil
+          ]
+        )
+
+      # Load via schema - the loader should convert.
+      record_false = TestRepo.get(AllTypesSchema, 1)
+      assert record_false.boolean_field == false
+
+      record_true = TestRepo.get(AllTypesSchema, 2)
+      assert record_true.boolean_field == true
+
+      record_nil = TestRepo.get(AllTypesSchema, 3)
+      assert record_nil.boolean_field == nil
     end
   end
 
@@ -738,6 +771,7 @@ defmodule EctoLibSql.TypeLoaderDumperTest do
       assert Decimal.equal?(record.decimal_field, attrs.decimal_field)
       assert record.date_field == attrs.date_field
       assert record.time_field == attrs.time_field
+      assert record.time_usec_field == attrs.time_usec_field
       # Microseconds might be truncated depending on precision, verify date/time components
       assert record.naive_datetime_field.year == naive_now.year
       assert record.naive_datetime_field.month == naive_now.month
