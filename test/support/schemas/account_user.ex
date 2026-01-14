@@ -5,10 +5,13 @@ defmodule EctoLibSql.Schemas.AccountUser do
 
   import Ecto.Changeset
 
+  alias EctoLibSql.Schemas.Account
+  alias EctoLibSql.Schemas.User
+
   schema "account_users" do
     field(:role, :string)
-    field(:account_id, :integer)
-    field(:user_id, :integer)
+    belongs_to(:account, Account)
+    belongs_to(:user, User)
 
     timestamps()
   end
@@ -16,5 +19,6 @@ defmodule EctoLibSql.Schemas.AccountUser do
   def changeset(struct, attrs) do
     struct
     |> cast(attrs, [:account_id, :user_id, :role])
+    |> validate_required([:account_id, :user_id])
   end
 end
