@@ -337,6 +337,8 @@ defmodule Ecto.Adapters.LibSql do
     {:ok, Decimal.to_string(decimal)}
   end
 
+  defp json_encode(nil), do: {:ok, nil}
+
   defp json_encode(value) when is_binary(value), do: {:ok, value}
 
   defp json_encode(value) when is_map(value) or is_list(value) do
