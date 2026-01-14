@@ -33,7 +33,13 @@ defmodule EctoLibSql.EctoSqlite3ReturningDebugTest do
       )
 
     # Check that table was created
-    {:ok, result} = Ecto.Adapters.SQL.query(TestRepo, "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'", [])
+    {:ok, result} =
+      Ecto.Adapters.SQL.query(
+        TestRepo,
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'",
+        []
+      )
+
     IO.inspect(result, label: "Users table schema")
 
     on_exit(fn ->
