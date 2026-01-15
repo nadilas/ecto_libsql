@@ -60,10 +60,10 @@ defmodule EctoLibSql.TypeLoaderDumperTest do
     end
   end
 
-  @test_db "z_ecto_libsql_test-type_loaders_dumpers.db"
-
   setup_all do
-    {:ok, _} = TestRepo.start_link(database: @test_db)
+    # Use unique per-run DB filename to avoid cross-run collisions
+    test_db = "z_ecto_libsql_test-type_loaders_dumpers_#{System.unique_integer([:positive])}.db"
+    {:ok, _} = TestRepo.start_link(database: test_db)
 
     Ecto.Adapters.SQL.query!(TestRepo, """
     CREATE TABLE IF NOT EXISTS all_types (
@@ -92,7 +92,7 @@ defmodule EctoLibSql.TypeLoaderDumperTest do
     """)
 
     on_exit(fn ->
-      EctoLibSql.TestHelpers.cleanup_db_files(@test_db)
+      EctoLibSql.TestHelpers.cleanup_db_files(test_db)
     end)
 
     :ok
