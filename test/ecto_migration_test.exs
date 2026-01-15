@@ -1120,7 +1120,7 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
 
     test "handles DateTime defaults" do
       table = %Table{name: :events, prefix: nil}
-      dt = DateTime.new!(~D[2026-01-16], ~T[14:30:00.000000], "UTC")
+      {:ok, dt, _} = DateTime.from_iso8601("2026-01-16T14:30:00Z")
       columns = [{:add, :created_at, :utc_datetime, [default: dt]}]
 
       [sql] = Connection.execute_ddl({:create, table, columns})
