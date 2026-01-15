@@ -1050,6 +1050,50 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
       # Verify JSON is properly escaped
       assert String.contains?(sql, ["string", "number", "bool"])
     end
+
+    test "logs warning when map has unencodable value (PID)" do
+      # Maps containing PIDs or functions cannot be JSON encoded
+      table = %Table{name: :data, prefix: nil}
+      pid = spawn(fn -> :ok end)
+
+      columns = [
+        {:add, :metadata, :text, [default: %{"pid" => pid}]}
+      ]
+
+      # Capture logs to verify warning is logged
+      log_output =
+        ExUnit.CaptureLog.capture_log(fn ->
+          [sql] = Connection.execute_ddl({:create, table, columns})
+
+          # When encoding fails, no DEFAULT clause should be generated
+          assert sql =~ ~r/"metadata".*TEXT/
+          refute sql =~ ~r/"metadata".*DEFAULT/
+        end)
+
+      assert log_output =~ "Failed to JSON encode map default value in migration"
+    end
+
+    test "logs warning when list has unencodable value (function)" do
+      # Lists containing functions cannot be JSON encoded
+      table = %Table{name: :data, prefix: nil}
+      func = fn -> :ok end
+
+      columns = [
+        {:add, :callbacks, :text, [default: [func, "other"]]}
+      ]
+
+      # Capture logs to verify warning is logged
+      log_output =
+        ExUnit.CaptureLog.capture_log(fn ->
+          [sql] = Connection.execute_ddl({:create, table, columns})
+
+          # When encoding fails, no DEFAULT clause should be generated
+          assert sql =~ ~r/"callbacks".*TEXT/
+          refute sql =~ ~r/"callbacks".*DEFAULT/
+        end)
+
+      assert log_output =~ "Failed to JSON encode list default value in migration"
+    end
   end
 
   describe "CHECK constraints" do
