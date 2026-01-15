@@ -962,7 +962,7 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
 
       # Empty list should be JSON encoded to '[]'
       assert sql =~ ~r/"tags".*TEXT.*DEFAULT/
-      assert String.contains?(sql, ["DEFAULT '[]'"])
+      assert sql =~ "DEFAULT '[]'"
     end
 
     test "handles unexpected types gracefully (atom)" do
