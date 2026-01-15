@@ -323,6 +323,12 @@ defmodule EctoLibSql.TypeLoaderDumperTest do
       record_nil = TestRepo.get(AllTypesSchema, 3)
       assert record_nil.boolean_field == nil
     end
+
+    test "nil boolean field remains nil" do
+      {:ok, _} = Ecto.Adapters.SQL.query(TestRepo, "INSERT INTO all_types (id) VALUES (3)")
+      record = TestRepo.get(AllTypesSchema, 3)
+      assert record.boolean_field == nil
+    end
   end
 
   describe "float types" do
@@ -330,8 +336,8 @@ defmodule EctoLibSql.TypeLoaderDumperTest do
       {:ok, _} =
         Ecto.Adapters.SQL.query(
           TestRepo,
-          "INSERT INTO all_types (float_field) VALUES (?), (?), (?)",
-          [3.14, 0.0, -2.71828]
+          "INSERT INTO all_types (float_field) VALUES (?), (?), (?), (?)",
+          [3.14, +0.0, -2.71828, -0.0]
         )
 
       {:ok, result} =
@@ -340,7 +346,7 @@ defmodule EctoLibSql.TypeLoaderDumperTest do
           "SELECT float_field FROM all_types ORDER BY float_field"
         )
 
-      assert [[-2.71828], [0.0], [3.14]] = result.rows
+      assert [[-2.71828], [0.0], [0.0], [3.14]] = result.rows
     end
 
     test "handles special float values" do
