@@ -473,6 +473,21 @@ defmodule Ecto.Adapters.LibSql.Connection do
   defp column_default(value) when is_binary(value), do: " DEFAULT '#{escape_string(value)}'"
   defp column_default(value) when is_number(value), do: " DEFAULT #{value}"
   defp column_default({:fragment, expr}), do: " DEFAULT #{expr}"
+
+  defp column_default(value) when is_map(value) do
+    case Jason.encode(value) do
+      {:ok, json} -> " DEFAULT '#{escape_string(json)}'"
+      {:error, _} -> ""
+    end
+  end
+
+  defp column_default(value) when is_list(value) do
+    case Jason.encode(value) do
+      {:ok, json} -> " DEFAULT '#{escape_string(json)}'"
+      {:error, _} -> ""
+    end
+  end
+
   # Handle any other unexpected types (e.g., empty maps or third-party migrations)
   # Logs a warning to help with debugging while gracefully falling back to no DEFAULT clause
   defp column_default(unexpected) do

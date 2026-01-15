@@ -939,28 +939,30 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
     test "handles unexpected types gracefully (empty map)" do
       # This test verifies the catch-all clause for unexpected types.
       # Empty maps can come from some migrations or other third-party code.
+      # As of the defaults update, empty maps are JSON encoded like other maps.
       table = %Table{name: :users, prefix: nil}
       columns = [{:add, :metadata, :string, [default: %{}]}]
 
       # Should not raise FunctionClauseError.
       [sql] = Connection.execute_ddl({:create, table, columns})
 
-      # Empty map should be treated as no default.
-      assert sql =~ ~r/"metadata".*TEXT/
-      refute sql =~ ~r/"metadata".*DEFAULT/
+      # Empty map should be JSON encoded to '{}'
+      assert sql =~ ~r/"metadata".*TEXT.*DEFAULT/
+      assert sql =~ "'{}'"
     end
 
     test "handles unexpected types gracefully (list)" do
       # Lists are another unexpected type that might appear.
+      # As of the defaults update, lists are JSON encoded.
       table = %Table{name: :users, prefix: nil}
       columns = [{:add, :tags, :string, [default: []]}]
 
       # Should not raise FunctionClauseError.
       [sql] = Connection.execute_ddl({:create, table, columns})
 
-      # Empty list should be treated as no default.
-      assert sql =~ ~r/"tags".*TEXT/
-      refute sql =~ ~r/"tags".*DEFAULT/
+      # Empty list should be JSON encoded to '[]'
+      assert sql =~ ~r/"tags".*TEXT.*DEFAULT/
+      assert String.contains?(sql, ["DEFAULT '[]'"])
     end
 
     test "handles unexpected types gracefully (atom)" do
@@ -974,6 +976,79 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
       # Unexpected atom should be treated as no default.
       assert sql =~ ~r/"status".*TEXT/
       refute sql =~ ~r/"status".*DEFAULT/
+    end
+
+    test "handles map defaults (JSON encoding)" do
+      table = %Table{name: :users, prefix: nil}
+
+      columns = [
+        {:add, :preferences, :text, [default: %{"theme" => "dark", "notifications" => true}]}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Map should be JSON encoded
+      assert sql =~ ~r/"preferences".*TEXT.*DEFAULT/
+      assert sql =~ "theme"
+      assert sql =~ "dark"
+    end
+
+    test "handles list defaults (JSON encoding)" do
+      table = %Table{name: :items, prefix: nil}
+
+      columns = [
+        {:add, :tags, :text, [default: ["tag1", "tag2", "tag3"]]}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # List should be JSON encoded
+      assert sql =~ ~r/"tags".*TEXT.*DEFAULT/
+      assert sql =~ "tag1"
+      assert sql =~ "tag2"
+    end
+
+    test "handles empty list defaults" do
+      table = %Table{name: :items, prefix: nil}
+      columns = [{:add, :tags, :text, [default: []]}]
+
+      # Empty list encodes to "[]" in JSON
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Should have a DEFAULT clause with empty array JSON
+      assert sql =~ ~r/"tags".*TEXT.*DEFAULT '\[\]'/
+    end
+
+    test "handles complex nested map defaults" do
+      table = %Table{name: :configs, prefix: nil}
+
+      columns = [
+        {:add, :settings, :text,
+         [default: %{"user" => %{"theme" => "light"}, "privacy" => false}]}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Nested map should be JSON encoded
+      assert sql =~ ~r/"settings".*TEXT.*DEFAULT/
+      assert sql =~ "user"
+      assert sql =~ "theme"
+      assert sql =~ "light"
+    end
+
+    test "handles map with various JSON types" do
+      table = %Table{name: :data, prefix: nil}
+
+      columns = [
+        {:add, :metadata, :text,
+         [default: %{"string" => "value", "number" => 42, "bool" => true, "null" => nil}]}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      assert sql =~ ~r/"metadata".*TEXT.*DEFAULT/
+      # Verify JSON is properly escaped
+      assert String.contains?(sql, ["string", "number", "bool"])
     end
   end
 
