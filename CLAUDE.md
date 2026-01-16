@@ -3,7 +3,7 @@
 > **Purpose**: Guide for AI agents working **ON** the ecto_libsql codebase itself
 >
 > **⚠️ IMPORTANT**: This guide is for **developing and maintaining** the ecto_libsql library.
-> **⚠️ IMPORTANT**: For **USING** ecto_libsql in applications, see [AGENTS.md](AGENTS.md) instead.
+> **⚠️ IMPORTANT**: For **USING** ecto_libsql in applications, see [USAGE.md](USAGE.md) instead.
 
 ---
 
@@ -126,7 +126,7 @@ Rust NIF (libsql-rs, connection registry, async runtime)
 - `native/ecto_libsql/src/tests/` - Rust tests (constants, utils, integration)
 
 **Documentation**:
-- `AGENTS.md` - API reference for users
+- `USAGE.md` - API reference for library users
 - `CLAUDE.md` - This file (development guide)
 - `README.md` - User documentation
 - `CHANGELOG.md` - Version history
@@ -360,14 +360,14 @@ end
 
 4. **Add tests** in both Rust (`native/ecto_libsql/src/tests/`) and Elixir (`test/`)
 
-5. **Update documentation** in `AGENTS.md` and `CHANGELOG.md`
+5. **Update documentation** in `USAGE.md` and `CHANGELOG.md`
 
 ### Adding an Ecto Feature
 
 1. Update `lib/ecto/adapters/libsql/connection.ex` for SQL generation
 2. Update `lib/ecto/adapters/libsql.ex` for storage/type handling
 3. Add tests in `test/ecto_*_test.exs`
-4. Update README and AGENTS.md
+4. Update README and USAGE.md
 
 ---
 
@@ -756,7 +756,7 @@ mix docs                                    # Generate docs
 
 ### Internal Documentation
 
-- **[AGENTS.md](AGENTS.md)** - API reference for library users
+- **[USAGE.md](USAGE.md)** - API reference for library users
 - **[README.md](README.md)** - User-facing documentation
 - **[CHANGELOG.md](CHANGELOG.md)** - Version history
 - **[ECTO_MIGRATION_GUIDE.md](ECTO_MIGRATION_GUIDE.md)** - Migrating from PostgreSQL/MySQL

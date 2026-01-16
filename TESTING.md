@@ -2,7 +2,7 @@
 
 This document explains the comprehensive testing strategy for EctoLibSql, covering both the Rust NIF layer and the Elixir layer. This guide is for **developers working on the ecto_libsql library itself**.
 
-> **Note**: If you're looking for guidance on testing applications that **use** ecto_libsql, see [AGENTS.md](AGENTS.md) instead.
+> **Note**: If you're looking for guidance on testing applications that **use** ecto_libsql, see [USAGE.md](USAGE.md) instead.
 
 ## Table of Contents
 

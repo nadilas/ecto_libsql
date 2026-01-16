@@ -9,7 +9,7 @@ Welcome to ecto_libsql! This guide provides comprehensive documentation, API ref
 
 ## ℹ️ About This Guide
 
-**AGENTS.md** is the application usage guide for developers building apps with ecto_libsql. It covers:
+**USAGE.md** is the application usage guide for developers building apps with ecto_libsql. It covers:
 - How to integrate ecto_libsql into your Elixir/Phoenix application
 - Configuration and connection management
 - Ecto schemas, migrations, and queries

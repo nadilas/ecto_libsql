@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Virtual table syntax**: Generates `CREATE VIRTUAL TABLE ... USING rtree(...)` DDL
   - **Implementation**: New `create_rtree_table/3`, `validate_rtree_options!/1`, and `validate_rtree_columns!/1` helpers in `connection.ex`
   - **Comprehensive test coverage** in `test/rtree_test.exs` covering 2D/3D tables, validation, queries, and CRUD operations
-  - **Documentation**: Full guide in AGENTS.md with examples for geographic data, time-series, and hybrid vector+spatial search
+  - **Documentation**: Full guide in USAGE.md with examples for geographic data, time-series, and hybrid vector+spatial search
   - **Comparison guide**: R*Tree vs Vector Search decision matrix in documentation
   - **Ecto integration**: Works with Ecto schemas using fragments for spatial queries
 
