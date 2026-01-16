@@ -939,28 +939,30 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
     test "handles unexpected types gracefully (empty map)" do
       # This test verifies the catch-all clause for unexpected types.
       # Empty maps can come from some migrations or other third-party code.
+      # As of the defaults update, empty maps are JSON encoded like other maps.
       table = %Table{name: :users, prefix: nil}
       columns = [{:add, :metadata, :string, [default: %{}]}]
 
       # Should not raise FunctionClauseError.
       [sql] = Connection.execute_ddl({:create, table, columns})
 
-      # Empty map should be treated as no default.
-      assert sql =~ ~r/"metadata".*TEXT/
-      refute sql =~ ~r/"metadata".*DEFAULT/
+      # Empty map should be JSON encoded to '{}'
+      assert sql =~ ~r/"metadata".*TEXT.*DEFAULT/
+      assert sql =~ "'{}'"
     end
 
     test "handles unexpected types gracefully (list)" do
       # Lists are another unexpected type that might appear.
+      # As of the defaults update, lists are JSON encoded.
       table = %Table{name: :users, prefix: nil}
       columns = [{:add, :tags, :string, [default: []]}]
 
       # Should not raise FunctionClauseError.
       [sql] = Connection.execute_ddl({:create, table, columns})
 
-      # Empty list should be treated as no default.
-      assert sql =~ ~r/"tags".*TEXT/
-      refute sql =~ ~r/"tags".*DEFAULT/
+      # Empty list should be JSON encoded to '[]'
+      assert sql =~ ~r/"tags".*TEXT.*DEFAULT/
+      assert sql =~ "DEFAULT '[]'"
     end
 
     test "handles unexpected types gracefully (atom)" do
@@ -974,6 +976,235 @@ defmodule Ecto.Adapters.LibSql.MigrationTest do
       # Unexpected atom should be treated as no default.
       assert sql =~ ~r/"status".*TEXT/
       refute sql =~ ~r/"status".*DEFAULT/
+    end
+
+    test "handles map defaults (JSON encoding)" do
+      table = %Table{name: :users, prefix: nil}
+
+      columns = [
+        {:add, :preferences, :text, [default: %{"theme" => "dark", "notifications" => true}]}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Map should be JSON encoded
+      assert sql =~ ~r/"preferences".*TEXT.*DEFAULT/
+
+      [_, json] = Regex.run(~r/DEFAULT '([^']*)'/, sql)
+
+      assert Jason.decode!(json) == %{
+               "theme" => "dark",
+               "notifications" => true
+             }
+    end
+
+    test "handles list defaults (JSON encoding)" do
+      table = %Table{name: :items, prefix: nil}
+
+      columns = [
+        {:add, :tags, :text, [default: ["tag1", "tag2", "tag3"]]}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # List should be JSON encoded
+      assert sql =~ ~r/"tags".*TEXT.*DEFAULT/
+
+      [_, json] = Regex.run(~r/DEFAULT '([^']*)'/, sql)
+
+      assert Jason.decode!(json) == ["tag1", "tag2", "tag3"]
+    end
+
+    test "handles empty list defaults" do
+      table = %Table{name: :items, prefix: nil}
+      columns = [{:add, :tags, :text, [default: []]}]
+
+      # Empty list encodes to "[]" in JSON
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Should have a DEFAULT clause with empty array JSON
+      assert sql =~ ~r/"tags".*TEXT.*DEFAULT/
+
+      [_, json] = Regex.run(~r/DEFAULT '([^']*)'/, sql)
+
+      assert Jason.decode!(json) == []
+    end
+
+    test "handles complex nested map defaults" do
+      table = %Table{name: :configs, prefix: nil}
+
+      columns = [
+        {:add, :settings, :text,
+         [default: %{"user" => %{"theme" => "light"}, "privacy" => false}]}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Nested map should be JSON encoded
+      assert sql =~ ~r/"settings".*TEXT.*DEFAULT/
+
+      [_, json] = Regex.run(~r/DEFAULT '([^']*)'/, sql)
+
+      assert Jason.decode!(json) == %{
+               "user" => %{"theme" => "light"},
+               "privacy" => false
+             }
+    end
+
+    test "handles map with various JSON types" do
+      table = %Table{name: :data, prefix: nil}
+
+      columns = [
+        {:add, :metadata, :text,
+         [default: %{"string" => "value", "number" => 42, "bool" => true, "null" => nil}]}
+      ]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      assert sql =~ ~r/"metadata".*TEXT.*DEFAULT/
+
+      # Verify JSON is properly escaped - all keys must be present including null values
+      [_, json] = Regex.run(~r/DEFAULT '([^']*)'/, sql)
+
+      assert Jason.decode!(json) == %{
+               "string" => "value",
+               "number" => 42,
+               "bool" => true,
+               "null" => nil
+             }
+    end
+
+    test "logs warning when map has unencodable value (PID)" do
+      # Maps containing PIDs or functions cannot be JSON encoded
+      table = %Table{name: :data, prefix: nil}
+      pid = spawn(fn -> :ok end)
+
+      columns = [
+        {:add, :metadata, :text, [default: %{"pid" => pid}]}
+      ]
+
+      # Capture logs to verify warning is logged
+      log_output =
+        ExUnit.CaptureLog.capture_log(fn ->
+          [sql] = Connection.execute_ddl({:create, table, columns})
+
+          # When encoding fails, no DEFAULT clause should be generated
+          assert sql =~ ~r/"metadata".*TEXT/
+          refute sql =~ ~r/"metadata".*DEFAULT/
+        end)
+
+      assert log_output =~ "Failed to JSON encode map default value in migration"
+    end
+
+    test "logs warning when list has unencodable value (function)" do
+      # Lists containing functions cannot be JSON encoded
+      table = %Table{name: :data, prefix: nil}
+      func = fn -> :ok end
+
+      columns = [
+        {:add, :callbacks, :text, [default: [func, "other"]]}
+      ]
+
+      # Capture logs to verify warning is logged
+      log_output =
+        ExUnit.CaptureLog.capture_log(fn ->
+          [sql] = Connection.execute_ddl({:create, table, columns})
+
+          # When encoding fails, no DEFAULT clause should be generated
+          assert sql =~ ~r/"callbacks".*TEXT/
+          refute sql =~ ~r/"callbacks".*DEFAULT/
+        end)
+
+      assert log_output =~ "Failed to JSON encode list default value in migration"
+    end
+
+    test "handles :null atom defaults (same as nil)" do
+      table = %Table{name: :users, prefix: nil}
+      columns = [{:add, :bio, :text, [default: :null]}]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # :null should result in no DEFAULT clause (same as nil)
+      refute sql =~ "DEFAULT"
+    end
+
+    test "handles Decimal defaults" do
+      table = %Table{name: :products, prefix: nil}
+      columns = [{:add, :price, :decimal, [default: Decimal.new("19.99")]}]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Decimal should be converted to string representation
+      assert sql =~ ~r/"price".*DECIMAL.*DEFAULT/
+      assert sql =~ "'19.99'"
+    end
+
+    test "handles DateTime defaults" do
+      table = %Table{name: :events, prefix: nil}
+      {:ok, dt, _} = DateTime.from_iso8601("2026-01-16T14:30:00Z")
+      columns = [{:add, :created_at, :utc_datetime, [default: dt]}]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # DateTime should be converted to ISO8601 string
+      assert sql =~ ~r/"created_at".*DATETIME.*DEFAULT/
+      assert sql =~ "2026-01-16T14:30:00Z"
+    end
+
+    test "handles NaiveDateTime defaults" do
+      table = %Table{name: :logs, prefix: nil}
+      dt = ~N[2026-01-16 14:30:00.000000]
+      columns = [{:add, :recorded_at, :naive_datetime, [default: dt]}]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # NaiveDateTime should be converted to ISO8601 string
+      assert sql =~ ~r/"recorded_at".*DATETIME.*DEFAULT/
+      assert sql =~ "2026-01-16T14:30:00"
+    end
+
+    test "handles Date defaults" do
+      table = %Table{name: :schedules, prefix: nil}
+      date = ~D[2026-01-16]
+      columns = [{:add, :event_date, :date, [default: date]}]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Date should be converted to ISO8601 string
+      assert sql =~ ~r/"event_date".*DATE.*DEFAULT/
+      assert sql =~ "'2026-01-16'"
+    end
+
+    test "handles Time defaults" do
+      table = %Table{name: :schedules, prefix: nil}
+      time = ~T[14:30:45.123456]
+      columns = [{:add, :event_time, :time, [default: time]}]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      # Time should be converted to ISO8601 string
+      assert sql =~ ~r/"event_time".*TIME.*DEFAULT/
+      assert sql =~ "14:30:45.123456"
+    end
+
+    test "handles Decimal with many decimal places" do
+      table = %Table{name: :data, prefix: nil}
+      columns = [{:add, :value, :decimal, [default: Decimal.new("123.456789012345")]}]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      assert sql =~ ~r/"value".*DECIMAL.*DEFAULT/
+      assert sql =~ "'123.456789012345'"
+    end
+
+    test "handles negative Decimal defaults" do
+      table = %Table{name: :balances, prefix: nil}
+      columns = [{:add, :amount, :decimal, [default: Decimal.new("-42.50")]}]
+
+      [sql] = Connection.execute_ddl({:create, table, columns})
+
+      assert sql =~ ~r/"amount".*DECIMAL.*DEFAULT/
+      assert sql =~ "'-42.50'"
     end
   end
 
