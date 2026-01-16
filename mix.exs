@@ -1,7 +1,7 @@
 defmodule EctoLibSql.MixProject do
   use Mix.Project
 
-  @version "0.8.6"
+  @version "0.8.7"
   @source_url "https://github.com/ocean/ecto_libsql"
 
   def project do
@@ -17,8 +17,6 @@ defmodule EctoLibSql.MixProject do
       package: package(),
       description: description(),
       docs: docs(),
-      test_pattern: "**/*_test.exs",
-      test_paths: ["test"],
       dialyzer: [
         plt_core_path: "priv/plts",
         app_tree: true,
