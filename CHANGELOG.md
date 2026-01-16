@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.7] - 2026-01-16
 
 ### Added
 
@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **R*Tree Spatial Indexing** - Full support for SQLite R*Tree virtual tables with 1D-5D indexing, validation, and comprehensive test coverage
 - **ecto_sqlite3 Compatibility Test Suite** - Comprehensive tests ensuring feature parity with ecto_sqlite3
 - **Type Encoding Improvements** - Automatic JSON encoding for plain maps, DateTime/Decimal parameter encoding, improved type coercion
+- **Comprehensive Type Loader/Dumper Support** - Full support for encoding/decoding temporal types (DateTime, NaiveDateTime, Date, Time), Decimal, and special nil values with proper ISO 8601 formatting
+- **Default Value Type Handling** - Support for Decimal, DateTime, NaiveDateTime, Date, Time, and `:null` as default values in migrations with warning logging for unsupported types
+- **Connection Recovery Testing** - Test suite for connection failure scenarios and recovery patterns
+- **Query Encoding Improvements** - Explicit test coverage for query parameter encoding with various data types and edge cases
 
 ### Fixed
 
@@ -21,11 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Migration Robustness** - Handle `:serial`/`:bigserial` types, improved default value handling with warnings for unsupported types
 - **JSON and RETURNING Clauses** - Fixed JSON encoding in RETURNING queries and datetime function calls
 - **Test Isolation** - Comprehensive database cleanup across all test suites, per-test table clearing, improved resource management
+- **DateTime Type Handling** - Fixed datetime_decode to handle timezone-aware ISO 8601 strings and nil value encoding for date/time/bool types
+- **Decimal Type Handling** - Updated assertions to accept both numeric and string representations of decimal values in database queries
+- **Datetime Roundtrip Preservation** - Strengthened microsecond precision preservation in datetime round-trip tests
 
 ### Changed
 
 - **Test Suite Consolidation** - Streamlined and improved test organization with better coverage of edge cases, error handling, and concurrent operations
 - **Code Quality** - Fixed Credo warnings, improved error handling patterns, removed unused variables/imports, enhanced British English consistency
+- **Documentation** - Updated documentation with SQLite-specific query limitations, compatibility testing results, and guidance for type encoding edge cases
 
 ## [0.8.6] - 2026-01-07
 
