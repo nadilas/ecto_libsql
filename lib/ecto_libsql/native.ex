@@ -708,7 +708,7 @@ defmodule EctoLibSql.Native do
           end
 
         # For INSERT/UPDATE/DELETE without RETURNING, columns and rows will be empty
-        # Set them to nil to match Ecto's expectations
+        # Set them to nil to match Ecto's expectations for write operations
         {columns, rows} =
           if command in [:insert, :update, :delete] and columns == [] and rows == [] do
             {nil, nil}
@@ -897,12 +897,45 @@ defmodule EctoLibSql.Native do
   @spec detect_command(String.t()) :: EctoLibSql.Result.command_type()
   def detect_command(query) when is_binary(query) do
     query
-    |> String.trim_leading()
+    |> skip_leading_comments_and_whitespace()
     |> extract_first_word()
     |> command_atom()
   end
 
   def detect_command(_), do: :unknown
+
+  # Skip leading whitespace and SQL comments (both -- and /* */ styles).
+  # This ensures queries starting with comments are correctly classified.
+  defp skip_leading_comments_and_whitespace(query) do
+    query
+    |> String.trim_leading()
+    |> do_skip_comments()
+  end
+
+  defp do_skip_comments(<<"--", rest::binary>>) do
+    # Single-line comment: skip to end of line
+    rest
+    |> skip_to_newline()
+    |> skip_leading_comments_and_whitespace()
+  end
+
+  defp do_skip_comments(<<"/*", rest::binary>>) do
+    # Block comment: skip to closing */
+    rest
+    |> skip_to_block_end()
+    |> skip_leading_comments_and_whitespace()
+  end
+
+  defp do_skip_comments(query), do: query
+
+  defp skip_to_newline(<<"\n", rest::binary>>), do: rest
+  defp skip_to_newline(<<"\r\n", rest::binary>>), do: rest
+  defp skip_to_newline(<<_::binary-size(1), rest::binary>>), do: skip_to_newline(rest)
+  defp skip_to_newline(<<>>), do: <<>>
+
+  defp skip_to_block_end(<<"*/", rest::binary>>), do: rest
+  defp skip_to_block_end(<<_::binary-size(1), rest::binary>>), do: skip_to_block_end(rest)
+  defp skip_to_block_end(<<>>), do: <<>>
 
   defp extract_first_word(query) do
     # Extract first word more efficiently - stop at first whitespace

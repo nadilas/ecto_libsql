@@ -298,10 +298,31 @@ mod should_use_query_tests {
 
     #[test]
     fn test_sql_with_comments() {
-        // Comments BEFORE the statement: we don't parse SQL comments,
-        // so "-- Comment\nSELECT" won't detect SELECT (first non-whitespace is '-')
-        // This is fine - Ecto doesn't generate SQL with leading comments
-        assert!(!should_use_query("-- Comment\nSELECT * FROM users"));
+        // Leading single-line comments are now skipped correctly
+        assert!(should_use_query("-- Comment\nSELECT * FROM users"));
+        assert!(should_use_query(
+            "-- First comment\n-- Second comment\nSELECT * FROM users"
+        ));
+
+        // Leading block comments are also skipped correctly
+        assert!(should_use_query("/* Block comment */ SELECT * FROM users"));
+        assert!(should_use_query(
+            "/* Multi\nline\nblock */ SELECT * FROM users"
+        ));
+
+        // Mixed comments and whitespace
+        assert!(should_use_query("  -- Comment\n  SELECT * FROM users"));
+        assert!(should_use_query(
+            "/* comment */ -- another\nSELECT * FROM users"
+        ));
+
+        // Leading comments on other statements
+        assert!(!should_use_query(
+            "-- Comment\nINSERT INTO users VALUES (1)"
+        ));
+        assert!(should_use_query(
+            "-- Comment\nINSERT INTO users VALUES (1) RETURNING id"
+        ));
 
         // Comments WITHIN the statement are fine - we detect keywords/clauses
         assert!(should_use_query(
