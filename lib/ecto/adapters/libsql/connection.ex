@@ -738,7 +738,7 @@ defmodule Ecto.Adapters.LibSql.Connection do
     {join, wheres} = using_join(query, :update_all, "FROM", sources)
     where = where(%{query | wheres: wheres}, sources)
 
-    ["UPDATE ", from, " AS ", name, " SET ", fields, join, where]
+    ["UPDATE ", from, " AS ", name, " SET ", fields, join, where | returning(query, sources)]
   end
 
   @impl true
@@ -749,7 +749,7 @@ defmodule Ecto.Adapters.LibSql.Connection do
     {join, wheres} = using_join(query, :delete_all, "USING", sources)
     where = where(%{query | wheres: wheres}, sources)
 
-    ["DELETE FROM ", from, " AS ", name, join, where]
+    ["DELETE FROM ", from, " AS ", name, join, where | returning(query, sources)]
   end
 
   @impl true
@@ -1357,6 +1357,53 @@ defmodule Ecto.Adapters.LibSql.Connection do
 
   defp returning(returning) do
     [" RETURNING " | intersperse_map(returning, ?,, &quote_name/1)]
+  end
+
+  # Generate RETURNING clause from query select (for update_all/delete_all).
+  # Returns empty list if no select clause is present.
+  defp returning(%{select: nil}, _sources), do: []
+
+  defp returning(%{select: %{fields: fields}} = query, sources) do
+    [" RETURNING " | returning_fields(fields, sources, query)]
+  end
+
+  # Format fields for RETURNING clause.
+  # SQLite's RETURNING clause doesn't support table aliases, so we use bare column names.
+  defp returning_fields([], _sources, _query), do: ["1"]
+
+  defp returning_fields(fields, sources, query) do
+    intersperse_map(fields, ", ", fn
+      {:&, _, [idx]} ->
+        # Selecting all fields from a source - list all schema fields.
+        {_source, _name, schema} = elem(sources, idx)
+
+        if schema do
+          Enum.map_join(schema.__schema__(:fields), ", ", &quote_name/1)
+        else
+          "*"
+        end
+
+      {key, value} when is_atom(key) ->
+        # Key-value pair (for maps) - return as "expr AS key".
+        # Use returning_expr to avoid table aliases.
+        [returning_expr(value, sources, query), " AS ", quote_name(key)]
+
+      value ->
+        returning_expr(value, sources, query)
+    end)
+  end
+
+  # Generate expressions for RETURNING clause without table aliases.
+  # SQLite doesn't support table aliases in RETURNING.
+  defp returning_expr({{:., _, [{:&, _, [_idx]}, field]}, _, []}, _sources, _query)
+       when is_atom(field) do
+    # Simple field reference like u.name - return just the quoted field name.
+    quote_name(field)
+  end
+
+  defp returning_expr(value, sources, query) do
+    # For other expressions, fall back to the normal expr function.
+    expr(value, sources, query)
   end
 
   defp intersperse_map(list, separator, mapper) do
