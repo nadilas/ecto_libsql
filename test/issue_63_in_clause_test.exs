@@ -11,7 +11,6 @@ defmodule EctoLibSql.Issue63InClauseTest do
   use EctoLibSql.Integration.Case, async: false
 
   alias EctoLibSql.Integration.TestRepo
-  alias EctoLibSql.Schemas.Product
 
   import Ecto.Query
 
